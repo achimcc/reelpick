@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::{Context, bail};
 use serde::Deserialize;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use crate::jellyfin::Movie;
 use crate::select::Candidate;
@@ -14,6 +15,7 @@ use crate::store::{Store, TmdbEntry};
 pub const CACHE_DAYS: i64 = 30;
 const PARALLEL: usize = 4;
 
+#[derive(Clone)]
 pub struct TmdbClient {
     api_key: String,
     language: String,
@@ -80,6 +82,12 @@ impl TmdbClient {
 
 /// Turns films into candidates: fresh cache, else TMDB, else stale cache,
 /// else what Jellyfin knows. Every step down is a warning, none is an error.
+///
+/// The per-film work runs concurrently in a `JoinSet`, each task acquiring a
+/// permit from the shared semaphore before it calls TMDB, so at most
+/// `PARALLEL` requests are ever in flight. Tasks are tagged with their
+/// original index so the result order matches the input order regardless of
+/// which finishes first.
 pub async fn enrich(
     store: &Store,
     tmdb: Option<&TmdbClient>,
@@ -87,39 +95,57 @@ pub async fn enrich(
     today: &str,
 ) -> anyhow::Result<Vec<Candidate>> {
     let limit = Arc::new(Semaphore::new(PARALLEL));
-    let mut tasks = Vec::with_capacity(movies.len());
-    for movie in movies {
+    let tmdb = tmdb.cloned();
+    let count = movies.len();
+    let mut tasks = JoinSet::new();
+    for (index, movie) in movies.into_iter().enumerate() {
         let store = store.clone();
         let limit = limit.clone();
         let today = today.to_string();
-        tasks.push(async move {
-            let Some(id) = movie.tmdb_id else {
-                return Ok::<Candidate, anyhow::Error>(from_jellyfin(movie));
-            };
-            if let Some(e) = store.cached_tmdb(id, CACHE_DAYS, &today).await? {
-                return Ok(from_entry(movie, e));
-            }
-            if let Some(client) = tmdb {
-                let _permit = limit.acquire().await.expect("semaphore open");
-                match client.movie(id).await {
-                    Ok(e) => {
-                        store.put_tmdb(&e, &today).await?;
-                        return Ok(from_entry(movie, e));
-                    }
-                    Err(err) => eprintln!("reelpick: {err:#}; using what is cached or known"),
-                }
-            }
-            if let Some(e) = store.stale_tmdb(id).await? {
-                return Ok(from_entry(movie, e));
-            }
-            Ok(from_jellyfin(movie))
+        let tmdb = tmdb.clone();
+        tasks.spawn(async move {
+            let result = enrich_one(&store, tmdb.as_ref(), &limit, movie, &today).await;
+            (index, result)
         });
     }
-    let mut out = Vec::with_capacity(tasks.len());
-    for t in tasks {
-        out.push(t.await?);
+    let mut out: Vec<Option<Candidate>> = (0..count).map(|_| None).collect();
+    while let Some(joined) = tasks.join_next().await {
+        let (index, result) = joined.context("TMDB enrichment task panicked")?;
+        out[index] = Some(result?);
     }
-    Ok(out)
+    Ok(out
+        .into_iter()
+        .map(|c| c.expect("every index filled"))
+        .collect())
+}
+
+async fn enrich_one(
+    store: &Store,
+    tmdb: Option<&TmdbClient>,
+    limit: &Semaphore,
+    movie: Movie,
+    today: &str,
+) -> anyhow::Result<Candidate> {
+    let Some(id) = movie.tmdb_id else {
+        return Ok(from_jellyfin(movie));
+    };
+    if let Some(e) = store.cached_tmdb(id, CACHE_DAYS, today).await? {
+        return Ok(from_entry(movie, e));
+    }
+    if let Some(client) = tmdb {
+        let _permit = limit.acquire().await.expect("semaphore open");
+        match client.movie(id).await {
+            Ok(e) => {
+                store.put_tmdb(&e, today).await?;
+                return Ok(from_entry(movie, e));
+            }
+            Err(err) => eprintln!("reelpick: {err:#}; using what is cached or known"),
+        }
+    }
+    if let Some(e) = store.stale_tmdb(id).await? {
+        return Ok(from_entry(movie, e));
+    }
+    Ok(from_jellyfin(movie))
 }
 
 fn from_entry(movie: Movie, e: TmdbEntry) -> Candidate {

@@ -3,6 +3,8 @@ mod common;
 use reelpick::jellyfin::Movie;
 use reelpick::store::{Store, TmdbEntry};
 use reelpick::tmdb::{TmdbClient, enrich};
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn movie(id: i64, rating: f64) -> Movie {
     Movie {
@@ -79,6 +81,58 @@ async fn without_tmdb_a_stale_entry_beats_jellyfin_and_jellyfin_beats_nothing() 
     assert_eq!((out[0].rating, out[0].votes), (Some(8.0), Some(900)));
     assert_eq!((out[1].rating, out[1].votes), (Some(6.9), None));
     assert_eq!(out[1].overview, "Jellyfin says: film 2.");
+}
+
+// Regression: the API key travels in the query string, so it must never
+// surface in an error's Display (`{:#}`) or Debug (`{:?}`) form, however
+// TMDB or the network misbehave.
+
+#[tokio::test]
+async fn the_key_never_leaks_into_an_error_on_an_invalid_body() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/3/movie/1"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("not json"))
+        .mount(&server)
+        .await;
+    let client = TmdbClient::new("t0k", "de")
+        .unwrap()
+        .with_base(&server.uri());
+    let err = client.movie(1).await.unwrap_err();
+    assert!(!format!("{err:#}").contains("t0k"));
+    assert!(!format!("{err:?}").contains("t0k"));
+}
+
+#[tokio::test]
+async fn the_key_never_leaks_into_an_error_on_a_server_error() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/3/movie/1"))
+        .respond_with(ResponseTemplate::new(500))
+        .mount(&server)
+        .await;
+    let client = TmdbClient::new("t0k", "de")
+        .unwrap()
+        .with_base(&server.uri());
+    let err = client.movie(1).await.unwrap_err();
+    assert!(!format!("{err:#}").contains("t0k"));
+    assert!(!format!("{err:?}").contains("t0k"));
+}
+
+#[tokio::test]
+async fn the_key_never_leaks_into_an_error_on_a_redirect_to_itself() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/3/movie/1"))
+        .respond_with(ResponseTemplate::new(302).insert_header("Location", "/3/movie/1"))
+        .mount(&server)
+        .await;
+    let client = TmdbClient::new("t0k", "de")
+        .unwrap()
+        .with_base(&server.uri());
+    let err = client.movie(1).await.unwrap_err();
+    assert!(!format!("{err:#}").contains("t0k"));
+    assert!(!format!("{err:?}").contains("t0k"));
 }
 
 #[tokio::test]
