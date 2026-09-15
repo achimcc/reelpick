@@ -123,7 +123,7 @@ All routes live under `base_path`.
 | `settings` | `{ }` | the configuration above, as a Nix attribute set (freeform TOML); `data_dir` and both `api_key_file` entries are set by the module itself |
 | `jellyfinApiKeyFile` | *(required)* | where the Jellyfin API key comes from — an absolute path, or a bare systemd credential name |
 | `tmdbApiKeyFile` | `null` | same, for the TMDB key; without it, ratings come from Jellyfin |
-| `pickTime` | `"05:00"` | when the daily pick runs, local time, as a systemd `OnCalendar` hour:minute |
+| `pickTime` | `"05:00"` | when the daily pick runs, as a systemd `OnCalendar` hour:minute, in the configured `settings.timezone` (UTC when unset) |
 
 Example, adapted from the module's own VM test (`nix/test.nix`):
 
@@ -186,10 +186,35 @@ and, at the point in the page where the pick should appear:
 
 Caddy's `httpInclude` forwards the original request's headers to the
 sub-request, so a session cookie checked by an authenticating proxy in front
-of the site reaches reelpick's fragment route as well. If reelpick does not
-answer, the include renders as empty text rather than breaking the page —
-keep any heading or intro text for that section outside the `httpInclude`
-call so the page still makes sense when the fragment is empty.
+of the site reaches reelpick's fragment route as well. If reelpick is
+unreachable, or answers with any status 400 or above, `httpInclude` does
+*not* render an empty string — it errors out, and that aborts the whole
+template, so the embedding page fails with a `500`. To degrade gracefully,
+map failures of the fragment route to an empty `200` in the proxy, for
+example with a `handle_errors` block scoped to that one path:
+
+```
+handle_errors {
+    @fragment path /reelpick/today.html
+    handle @fragment {
+        respond 200
+    }
+}
+```
+
+or load the fragment client-side (`fetch()` into a placeholder element)
+instead of through `httpInclude`, so a failure there never touches the page
+that embeds it.
+
+The fragment also escapes every `{` and `}` in its output (as `&#123;` /
+`&#125;`) before it is served. `httpInclude` parses the included body as a
+Go template, and the fragment carries film text — including the fallback
+teaser, which is the TMDB overview verbatim and thus editable by anyone with
+a TMDB account — so without this, a teaser containing `{{.Req.Header}}`
+would be executed in the operator's page. The browser still renders `{` and
+`}` normally; only Caddy's template parser is blinded. This is not a
+substitute for care in what the include points at: it must only ever point
+at reelpick's own fragment route, never at a third party's.
 
 ## Development
 

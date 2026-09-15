@@ -7,9 +7,10 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::extract::{Path, State as AxumState};
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Response};
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::config::Config;
 use crate::store::Store;
@@ -34,6 +35,23 @@ pub fn router(state: State) -> Router {
         .route(&format!("{base}/poster/{{file}}"), get(poster))
         .route(&format!("{base}/{{date}}"), get(article))
         .with_state(shared)
+        // No page here needs JavaScript or a stylesheet other than its own;
+        // these three are cheap locks against the fragment ever being
+        // (mis)used as more than static markup.
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; script-src 'none'; img-src 'self'; style-src 'self'",
+            ),
+        ))
 }
 
 fn failed(e: anyhow::Error) -> Response {
@@ -47,7 +65,17 @@ fn is_date(s: &str) -> bool {
 
 async fn fragment(AxumState(s): AxumState<Shared>) -> Response {
     match s.store.latest_pick().await {
-        Ok(p) => pages::fragment(&s.config, p.as_ref()).into_response(),
+        Ok(p) => {
+            let markup = pages::fragment(&s.config, p.as_ref()).into_string();
+            // Operators embed this fragment with Caddy's `{{httpInclude}}`,
+            // which parses the included body as a Go template. Maud escapes
+            // `& < > "` but not braces, and the fallback teaser is the TMDB
+            // overview verbatim — editable by anyone with a TMDB account.
+            // Escaping every brace here means the browser still shows `{`,
+            // but Caddy's template parser never sees a `{{` delimiter to act on.
+            let escaped = markup.replace('{', "&#123;").replace('}', "&#125;");
+            Html(escaped).into_response()
+        }
         Err(e) => failed(e),
     }
 }

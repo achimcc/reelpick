@@ -136,6 +136,6 @@ but never makes it disappear.
 | Ollama unreachable | falls back to the best rating and TMDB's text, `generated_by = fallback` | unaffected | unaffected |
 | TMDB unreachable | falls back to the cache, then to Jellyfin's rating; warning logged | unaffected | unaffected |
 | Jellyfin unreachable | fails loudly (the unit is reported failed) | shows the last pick | shows the last pick, with its date |
-| reelpick itself unreachable | — | — | the embedded section is simply empty; the rest of the page is intact |
+| reelpick itself unreachable | — | — | Caddy's `httpInclude` treats any status ≥ 400 (and a failed upstream dial, which the proxy answers with 502) as an error and aborts the whole template — the embedding page fails with a `500`. The operator must map failures of the fragment route to an empty `200` in the proxy (a `handle_errors` block scoped to that path), or load the fragment client-side instead |
 | Candidate pool empty | falls back to the exhaustion rule; if that is also empty, an error naming the cause | shows the last pick | shows the last pick |
 | Model answers outside the schema | one retry, then the fallback | unaffected | unaffected |

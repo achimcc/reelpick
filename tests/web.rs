@@ -50,6 +50,23 @@ async fn app(picks: &[Pick]) -> (tempfile::TempDir, axum::Router) {
     (dir, router(State { config, store }))
 }
 
+/// Same as `app`, but the config omits `base_path` entirely, so every route
+/// is served from the root instead of under `/reelpick`.
+async fn app_at_root(picks: &[Pick]) -> (tempfile::TempDir, axum::Router) {
+    let dir = tempfile::tempdir().unwrap();
+    let text = format!(
+        "data_dir = {:?}\nhome_url = \"https://home.example/\"\n[jellyfin]\nurl = \"http://j\"\npublic_url = \"https://jellyfin.example\"\nlibrary = \"Filme\"\n[ollama]\nurl = \"http://o\"\nmodel = \"m\"\n",
+        dir.path().to_str().unwrap()
+    );
+    let config = Config::from_toml(&text).unwrap();
+    assert_eq!(config.base_path, "");
+    let store = Store::open(&dir.path().join("db")).await.unwrap();
+    for p in picks {
+        store.insert_pick(p).await.unwrap();
+    }
+    (dir, router(State { config, store }))
+}
+
 async fn get(app: &axum::Router, path: &str) -> (StatusCode, axum::http::HeaderMap, String) {
     let res = app
         .clone()
@@ -75,7 +92,7 @@ async fn the_fragment_shows_the_latest_pick_and_links_into_the_article() {
         pick("2026-09-15", "Heat", true),
     ])
     .await;
-    let (status, _, body) = get(&app, "/reelpick/today.html").await;
+    let (status, headers, body) = get(&app, "/reelpick/today.html").await;
     assert_eq!(status, StatusCode::OK);
     assert!(!body.contains("<html"));
     assert!(body.contains("Heat") && !body.contains("Older"));
@@ -83,6 +100,21 @@ async fn the_fragment_shows_the_latest_pick_and_links_into_the_article() {
     assert!(body.contains("src=\"/reelpick/poster/2026-09-15.jpg\""));
     assert!(body.contains("Two men. One city."));
     assert!(body.contains("class=\"reelpick-"));
+    assert_eq!(headers["x-content-type-options"], "nosniff");
+}
+
+#[tokio::test]
+async fn the_fragment_escapes_braces_so_an_embedding_caddy_template_cannot_execute_it() {
+    let mut p = pick("2026-09-15", "Brace {film}", true);
+    p.teaser = "{{.Req.Header}} and {{ .Foo }}".into();
+    let (_d, app) = app(&[p]).await;
+    let (status, _, body) = get(&app, "/reelpick/today.html").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(!body.contains("{{"));
+    assert!(!body.contains('{'));
+    assert!(!body.contains('}'));
+    assert!(body.contains("Brace"));
+    assert!(body.contains(".Req.Header"));
 }
 
 #[tokio::test]
@@ -165,4 +197,16 @@ async fn today_redirects_poster_serves_and_healthz_names_the_date() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body.trim(), "2026-09-15");
     assert_eq!(get(&app, "/reelpick/style.css").await.0, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn an_empty_base_path_serves_every_route_from_the_root() {
+    let (_d, app) = app_at_root(&[]).await;
+    assert_eq!(get(&app, "/").await.0, StatusCode::OK);
+    assert_eq!(get(&app, "/today.html").await.0, StatusCode::OK);
+    assert_eq!(
+        get(&app, "/healthz").await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(get(&app, "/style.css").await.0, StatusCode::OK);
 }
