@@ -116,10 +116,16 @@ pub async fn run<R: rand::Rng>(
     Ok(Outcome::Picked(pick))
 }
 
+/// The upper bound `ollama::validate` enforces on a model's teaser. The
+/// fallback path bypasses `validate` entirely (there is no model answer to
+/// check), so it must cap itself: an overview with no `.`/`!`/`?` would
+/// otherwise hand back the whole, unbounded text.
+const TEASER_MAX_CHARS: usize = 400;
+
 /// No model: the best rating, and the description stands in for the texts.
 pub fn fallback(candidates: &[Candidate]) -> anyhow::Result<Choice> {
     let best = best_rated(candidates).context("no candidate to fall back to")?;
-    let teaser = first_sentences(&best.overview, 2);
+    let teaser = cap_teaser(&first_sentences(&best.overview, 2), TEASER_MAX_CHARS);
     Ok(Choice {
         tmdb_id: best.movie.tmdb_id.context("candidate without tmdb_id")?,
         reason: "chosen by rating".to_string(),
@@ -149,4 +155,72 @@ fn first_sentences(text: &str, n: usize) -> String {
         }
     }
     out.trim().to_string()
+}
+
+/// `text` as-is when it already fits in `max_chars` (counting characters,
+/// not bytes); otherwise cut at the last word boundary that still fits,
+/// with an ellipsis added, so the result never exceeds `max_chars`.
+fn cap_teaser(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let budget = max_chars.saturating_sub(1); // room for the ellipsis
+    let truncated: String = text.chars().take(budget).collect();
+    let cut = match truncated.rfind(char::is_whitespace) {
+        Some(i) => &truncated[..i],
+        None => &truncated[..],
+    };
+    format!("{}…", cut.trim_end())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jellyfin::Movie;
+
+    fn movie(tmdb_id: i64) -> Movie {
+        Movie {
+            item_id: format!("item-{tmdb_id}"),
+            title: format!("Film {tmdb_id}"),
+            year: Some(2000),
+            tmdb_id: Some(tmdb_id),
+            genres: vec![],
+            director: None,
+            overview: None,
+            runtime_min: None,
+            community_rating: None,
+        }
+    }
+
+    fn cand(tmdb_id: i64, overview: &str) -> Candidate {
+        Candidate {
+            movie: movie(tmdb_id),
+            rating: Some(8.0),
+            votes: Some(1000),
+            overview: overview.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_punctuation_free_overview_is_cut_at_400_chars_with_an_ellipsis() {
+        let overview: String = "lorem ".repeat(200); // 1200 chars, no '.', '!' or '?'
+        assert!(overview.chars().count() > 1000);
+        let choice = fallback(&[cand(1, &overview)]).unwrap();
+        let len = choice.teaser.chars().count();
+        assert!(len <= TEASER_MAX_CHARS, "{len}");
+        assert!(choice.teaser.ends_with('…'), "{}", choice.teaser);
+        // The cut lands on a word boundary: no trailing partial "lore" before the ellipsis.
+        assert!(choice.teaser.trim_end_matches('…').ends_with("lorem"));
+    }
+
+    #[test]
+    fn a_normal_two_sentence_overview_is_left_unchanged() {
+        let overview = "Two men on opposite sides of the law. One city that cannot hold both. \
+                         A third sentence that must not appear.";
+        let choice = fallback(&[cand(1, overview)]).unwrap();
+        assert_eq!(
+            choice.teaser,
+            "Two men on opposite sides of the law. One city that cannot hold both."
+        );
+    }
 }
