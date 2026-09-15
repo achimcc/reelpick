@@ -30,9 +30,21 @@ let
     LockPersonality = true;
     MemoryDenyWriteExecute = true;
     SystemCallFilter = [ "@system-service" "~@privileged" ];
+    SystemCallArchitectures = "native";
+    ProtectKernelTunables = true;
+    ProtectKernelModules = true;
+    ProtectKernelLogs = true;
+    ProtectControlGroups = true;
+    ProtectClock = true;
+    ProtectHostname = true;
+    ProtectProc = "invisible";
+    ProcSubset = "pid";
+    RestrictSUIDSGID = true;
+    RemoveIPC = true;
     CapabilityBoundingSet = "";
     UMask = "0077";
     StateDirectory = "reelpick";
+    StateDirectoryMode = "0700";
     WorkingDirectory = dataDir;
   };
 in
@@ -75,7 +87,12 @@ in
     pickTime = lib.mkOption {
       type = lib.types.str;
       default = "05:00";
-      description = "When the daily pick runs, in the machine's local time (systemd OnCalendar hour:minute).";
+      description = ''
+        When the daily pick runs (systemd OnCalendar hour:minute), in the
+        configured `settings.timezone` — UTC when that is unset. This is the
+        same zone that decides what "today" means for the pick itself, not
+        necessarily the machine's local time.
+      '';
     };
   };
 
@@ -108,6 +125,7 @@ in
       environment.REELPICK_CONFIG = "/etc/reelpick/reelpick.toml";
       serviceConfig = hardening // {
         Type = "oneshot";
+        TimeoutStartSec = "30min";
         ExecStart = "${lib.getExe cfg.package} pick";
         LoadCredential = [ "jellyfin:${cfg.jellyfinApiKeyFile}" ]
           ++ lib.optional (cfg.tmdbApiKeyFile != null) "tmdb:${cfg.tmdbApiKeyFile}";
@@ -118,7 +136,10 @@ in
       description = "reelpick — the daily pick";
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = "*-*-* ${cfg.pickTime}:00";
+        # systemd OnCalendar accepts a trailing IANA zone; without one it
+        # would fire in the machine's zone, not the zone "today" is computed
+        # in for the pick itself.
+        OnCalendar = "*-*-* ${cfg.pickTime}:00 ${cfg.settings.timezone or "UTC"}";
         Persistent = true;
         Unit = "reelpick-pick.service";
       };
