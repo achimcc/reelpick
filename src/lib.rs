@@ -4,3 +4,4 @@ pub mod config;
 pub mod jellyfin;
 pub mod select;
 pub mod store;
+pub mod tmdb;
