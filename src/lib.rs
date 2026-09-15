@@ -7,3 +7,4 @@ pub mod pick;
 pub mod select;
 pub mod store;
 pub mod tmdb;
+pub mod web;

@@ -1,0 +1,14 @@
+:root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fafaf8; --muted: #666; --accent: #b5452e; }
+@media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #151515; --muted: #aaa; --accent: #e8836b; } }
+body { margin: 0; padding: 1.5rem 1rem; font: 16px/1.55 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+main { max-width: 42rem; margin: 0 auto; }
+a { color: var(--accent); }
+.reelpick-head { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
+.reelpick-head img { width: 180px; max-width: 40%; height: auto; border-radius: 4px; }
+.reelpick-meta { color: var(--muted); font-size: 0.9rem; }
+.reelpick-reason { border-left: 3px solid var(--accent); padding-left: 0.75rem; color: var(--muted); }
+.reelpick-nav { display: flex; justify-content: space-between; margin-top: 2rem; font-size: 0.9rem; }
+.reelpick-button { display: inline-block; padding: 0.5rem 0.9rem; border: 1px solid var(--accent); border-radius: 4px; text-decoration: none; }
+.reelpick-history h2 { margin-top: 1.5rem; font-size: 1rem; color: var(--muted); }
+.reelpick-history li { list-style: none; margin: 0.25rem 0; }
+.reelpick-history time { display: inline-block; width: 7rem; color: var(--muted); }
