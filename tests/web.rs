@@ -50,6 +50,30 @@ async fn app(picks: &[Pick]) -> (tempfile::TempDir, axum::Router) {
     (dir, router(State { config, store }))
 }
 
+/// Same as `app`, but with an explicit `language` — the chrome texts are the
+/// only thing that changes with it, so both cases are worth a page each.
+async fn app_in(language: &str, picks: &[Pick]) -> (tempfile::TempDir, axum::Router) {
+    let dir = tempfile::tempdir().unwrap();
+    let text = format!(
+        "base_path = \"/reelpick\"\nlanguage = {language:?}\ndata_dir = {:?}\nhome_url = \"https://home.example/\"\n[jellyfin]\nurl = \"http://j\"\npublic_url = \"https://jellyfin.example\"\nlibrary = \"Filme\"\n[ollama]\nurl = \"http://o\"\nmodel = \"m\"\n",
+        dir.path().to_str().unwrap()
+    );
+    let config = Config::from_toml(&text).unwrap();
+    let store = Store::open(&dir.path().join("db")).await.unwrap();
+    for p in picks {
+        store.insert_pick(p).await.unwrap();
+        if p.has_poster {
+            std::fs::create_dir_all(dir.path().join("posters")).unwrap();
+            std::fs::write(
+                dir.path().join(format!("posters/{}.jpg", p.date)),
+                b"\xFF\xD8jpg",
+            )
+            .unwrap();
+        }
+    }
+    (dir, router(State { config, store }))
+}
+
 /// Same as `app`, but the config omits `base_path` entirely, so every route
 /// is served from the root instead of under `/reelpick`.
 async fn app_at_root(picks: &[Pick]) -> (tempfile::TempDir, axum::Router) {
@@ -147,7 +171,13 @@ async fn the_article_renders_markdown_safely_and_links_to_jellyfin_and_its_neigh
         body.contains("href=\"/reelpick/2026-09-14\"")
             && body.contains("href=\"/reelpick/2026-09-16\"")
     );
-    assert!(body.contains("Michael Mann") && body.contains("6500") && body.contains("7.9"));
+    assert!(body.contains("Directed by Michael Mann"));
+    // The vote count is grouped in the separator of the language: `6,500` in
+    // English, `6.500` in German — never the bare `6500` of a debug print.
+    assert!(body.contains("7.9/10 from 6,500 votes"), "{body}");
+    assert!(body.contains("170 min"));
+    assert!(body.contains("Watch in Jellyfin"));
+    assert!(body.contains("<title>Heat — reelpick</title>"));
     assert!(body.contains("https://home.example/"));
     assert!(!body.contains("<script>") && !body.contains("javascript:"));
     assert_eq!(
@@ -172,7 +202,109 @@ async fn the_history_lists_everything_newest_first_grouped_by_month() {
     let heat = body.find("Heat").unwrap();
     let august = body.find("August").unwrap();
     assert!(heat < august);
-    assert!(body.contains("2026-09") && body.contains("2026-08"));
+    assert!(body.contains("2026-09-15") && body.contains("2026-08-31"));
+    // The month is a heading in words, not the `2026-09` the database groups by.
+    assert!(body.contains("[ SEPTEMBER 2026 ]") && body.contains("[ AUGUST 2026 ]"));
+    assert!(!body.contains(">2026-09<"), "{body}");
+}
+
+/// The operator asked for this in so many words: every pick in the history is
+/// the same compact card the front page shows, not a bare title in a list.
+#[tokio::test]
+async fn every_pick_in_the_history_is_the_card_the_front_page_shows() {
+    let (_d, app) = app(&[
+        pick("2026-09-14", "Older", false),
+        pick("2026-09-15", "Heat", true),
+    ])
+    .await;
+    let (status, _, body) = get(&app, "/reelpick/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body.matches("class=\"reelpick-field\"").count(),
+        2,
+        "{body}"
+    );
+    assert_eq!(body.matches("class=\"reelpick-teaser\"").count(), 2);
+    assert!(body.contains("class=\"reelpick-grid\""));
+    assert!(body.contains("Two men. One city."));
+    // The poster of the pick that has one, and no broken `img` for the one
+    // that has not.
+    assert!(body.contains("src=\"/reelpick/poster/2026-09-15.jpg\""));
+    assert!(!body.contains("src=\"/reelpick/poster/2026-09-14.jpg\""));
+    assert_eq!(body.matches("class=\"reelpick-poster\"").count(), 1);
+    // The card is the link, so a title is not a second one next to it.
+    assert!(body.contains("<a class=\"reelpick-field\" href=\"/reelpick/2026-09-15\""));
+    // The clothes of the front page: prompt line, cursor, section heading.
+    assert!(body.contains("root@home.example") && body.contains("class=\"kursor\""));
+    assert!(body.contains("[ ALL PICKS ]"));
+}
+
+#[tokio::test]
+async fn an_empty_history_says_so_instead_of_showing_an_empty_grid() {
+    let (_d, app) = app(&[]).await;
+    let (status, _, body) = get(&app, "/reelpick/").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("No pick yet."));
+    assert!(!body.contains("reelpick-grid"));
+}
+
+/// The pages are read by people who configured `language = "de"`; the words
+/// around the film follow that, the markup does not change with it.
+#[tokio::test]
+async fn the_chrome_texts_follow_the_configured_language() {
+    let picks = [pick("2026-09-15", "Heat", true)];
+
+    let (_d, de) = app_in("de", &picks).await;
+    let (_, _, fragment) = get(&de, "/reelpick/today.html").await;
+    assert!(fragment.contains("Alle bisherigen Tipps"), "{fragment}");
+    assert!(!fragment.contains("All picks so far"));
+    let (_, _, article) = get(&de, "/reelpick/2026-09-15").await;
+    assert!(article.contains("<html lang=\"de\""));
+    assert!(article.contains("In Jellyfin ansehen"));
+    assert!(article.contains("Regie: Michael Mann"));
+    assert!(article.contains("170 Min."));
+    // German writes 7,9 and groups thousands with a point.
+    assert!(article.contains("7,9/10 bei 6.500 Stimmen"), "{article}");
+    assert!(article.contains("Tipp vom"));
+    assert!(article.contains("← Startseite"));
+    let (_, _, history) = get(&de, "/reelpick/").await;
+    assert!(history.contains("[ ALLE TIPPS ]"));
+    assert!(history.contains("[ SEPTEMBER 2026 ]"));
+    assert!(history.contains("Bisher ein Tipp."));
+    assert!(!history.contains("All picks"));
+
+    let (_d, en) = app_in("en", &picks).await;
+    let (_, _, fragment) = get(&en, "/reelpick/today.html").await;
+    assert!(fragment.contains("All picks so far"));
+    let (_, _, article) = get(&en, "/reelpick/2026-09-15").await;
+    assert!(article.contains("<html lang=\"en\""));
+    assert!(article.contains("Watch in Jellyfin"));
+    assert!(article.contains("7.9/10 from 6,500 votes"), "{article}");
+    let (_, _, history) = get(&en, "/reelpick/").await;
+    assert!(history.contains("[ ALL PICKS ]") && history.contains("[ SEPTEMBER 2026 ]"));
+    assert!(!history.contains("Alle Tipps"));
+
+    // An empty history is a sentence in the configured language too.
+    let (_d, de_empty) = app_in("de", &[]).await;
+    let (_, _, body) = get(&de_empty, "/reelpick/today.html").await;
+    assert!(body.contains("Noch kein Tipp."));
+}
+
+/// The stylesheet is what makes the pages look like the front page; it is
+/// served under the base path, as CSS, and carries the palette it copied.
+#[tokio::test]
+async fn the_stylesheet_is_css_under_the_base_path_and_carries_the_palette() {
+    let (_d, app) = app(&[]).await;
+    let (status, headers, body) = get(&app, "/reelpick/style.css").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["content-type"], "text/css; charset=utf-8");
+    assert!(body.contains("--auf: #4ef08a"), "{body}");
+    assert!(body.contains(".reelpick-field"));
+    assert!(!body.contains("prefers-color-scheme: light"));
+    // And every page asks for exactly this file, under the base path.
+    let (_, _, page) = get(&app, "/reelpick/").await;
+    assert!(page.contains("href=\"/reelpick/style.css\""));
+    assert!(!page.contains("<script"));
 }
 
 #[tokio::test]

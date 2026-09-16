@@ -57,7 +57,7 @@ from environment variables.
 | `listen` | `"127.0.0.1:8080"` | address `serve` binds to |
 | `base_path` | `""` | path prefix for every route (e.g. `"/reelpick"`); a trailing slash is stripped; `""` serves from the root |
 | `data_dir` | `"/var/lib/reelpick"` | where the SQLite database and posters live |
-| `language` | `"en"` | language code passed to Ollama for the generated texts |
+| `language` | `"en"` | the language of everything reelpick writes: passed to Ollama for the generated texts, and it picks the words of the pages themselves (`de`, or anything else for English) |
 | `timezone` | `"UTC"` | IANA time zone name; determines what "today" means |
 | `home_url` | `"/"` | link back to the site the pages are embedded into |
 | `sample_size` | `5` | how many candidates are offered to the model each day |
@@ -104,7 +104,7 @@ All routes live under `base_path`.
 
 | Route | Response |
 |---|---|
-| `GET <base>/` | the history: every past pick, newest first |
+| `GET <base>/` | the history: every past pick, newest first, grouped by month, each one as the same card the fragment shows |
 | `GET <base>/today.html` | the embeddable fragment: the latest pick, as a link with poster, title, year, teaser, and date (not necessarily *today's* pick — if `pick` failed, this shows yesterday's, dated) |
 | `GET <base>/today` | `302 Found` to the latest article |
 | `GET <base>/<date>` | the article for that date (`YYYY-MM-DD`): poster, title, year, director, genres, runtime, rating and vote count, the reason, the rendered article, a link into Jellyfin, and links to the previous and next day |

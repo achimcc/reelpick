@@ -105,6 +105,19 @@ pick, one article page per date with a link back into Jellyfin, a redirect
 to today's article, the stored poster, and a health check. No JavaScript
 anywhere.
 
+The history and the article carry a small stylesheet of their own
+(`<base>/style.css`) that takes up the colours and the two font stacks of
+the front page that embeds the fragment, plus a link back to it. Two things
+keep the two ends from drifting apart. A pick is rendered by one function,
+`web::pages::card`, which the fragment and the history both call, so the
+compact card — poster, title with year, teaser, date — is literally the same
+markup in both places, under the `reelpick-*` class names the embedding page
+styles itself. And every word that is not the film's own comes from
+`web::strings::Strings`, chosen by `language`: German for `de`, English for
+everything else, including the month headings of the history and the
+separators in a rating and a vote count. No JavaScript anywhere, and no
+image from a host other than this one.
+
 The Jellyfin link on an article page points at
 `<jellyfin.public_url>/web/index.html#/details?id=<item_id>`. If the film
 later disappears from Jellyfin, the article stays and the link leads to

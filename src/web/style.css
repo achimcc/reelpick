@@ -1,14 +1,351 @@
-:root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fafaf8; --muted: #666; --accent: #b5452e; }
-@media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #151515; --muted: #aaa; --accent: #e8836b; } }
-body { margin: 0; padding: 1.5rem 1rem; font: 16px/1.55 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
-main { max-width: 42rem; margin: 0 auto; }
-a { color: var(--accent); }
-.reelpick-head { display: flex; gap: 1.25rem; align-items: flex-start; flex-wrap: wrap; }
-.reelpick-head img { width: 180px; max-width: 40%; height: auto; border-radius: 4px; }
-.reelpick-meta { color: var(--muted); font-size: 0.9rem; }
-.reelpick-reason { border-left: 3px solid var(--accent); padding-left: 0.75rem; color: var(--muted); }
-.reelpick-nav { display: flex; justify-content: space-between; margin-top: 2rem; font-size: 0.9rem; }
-.reelpick-button { display: inline-block; padding: 0.5rem 0.9rem; border: 1px solid var(--accent); border-radius: 4px; text-decoration: none; }
-.reelpick-history h2 { margin-top: 1.5rem; font-size: 1rem; color: var(--muted); }
-.reelpick-history li { list-style: none; margin: 0.25rem 0; }
-.reelpick-history time { display: inline-block; width: 7rem; color: var(--muted); }
+/* reelpick's own pages, in the clothes of the page that embeds it.
+ *
+ * The colours and the two font stacks below are the palette of the front page
+ * of rusty-vault.de — `lib/palette.nix` in the operator's repository, rendered
+ * into the `:root` block of `pkgs/einstiegsseite/default.nix`. The design
+ * document asks for exactly that (section 7: "the article and the history
+ * carry a small stylesheet of their own that takes up the colours and the
+ * fonts of the front page, and a link back to it. No JavaScript anywhere").
+ *
+ * COPIED ON PURPOSE, NOT IMPORTED: reelpick must render the same on a host
+ * that has never heard of that page — the fragment is embedded there, the
+ * pages are not. Whoever changes the palette there changes these values here;
+ * there is no third place where they could be kept.
+ *
+ * Dark only, as there: a terminal in light grey does not exist. The classes
+ * beginning with `reelpick-` are shared with the embedding page, which brings
+ * its own rules for them; the rest exists only here.
+ */
+
+:root {
+  color-scheme: dark;
+  --grund: #07090a;
+  --schleier: #0d1114;
+  --rand: #1b2327;
+  --text: #c8d6cd;
+  --leise: #8fa39a;
+  --sehrleise: #75887f;
+  --auf: #4ef08a;
+  --zu: #ff3f74;
+  --mono: ui-monospace, SFMono-Regular, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --lesbar: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--grund);
+  color: var(--text);
+  font: 400 16px/1.55 var(--lesbar);
+  -webkit-font-smoothing: antialiased;
+}
+
+.bahn { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+/* --- The head ---------------------------------------------------------- */
+
+.kopf {
+  position: relative;
+  padding: 44px 0 36px;
+  border-bottom: 1px solid var(--rand);
+  background:
+    radial-gradient(48rem 26rem at 8% -30%, hsl(150 90% 45% / .10), transparent 62%),
+    radial-gradient(40rem 22rem at 92% -20%, hsl(320 90% 55% / .07), transparent 65%);
+}
+
+/* Scanlines, faint enough to read as texture and not as flicker, and
+   `pointer-events: none` so they never cover anything clickable. */
+.kopf::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(to bottom, rgb(255 255 255 / .022) 0 1px, transparent 1px 3px);
+}
+
+.kopf .bahn { position: relative; }
+
+.prompt {
+  margin: 0 0 18px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--sehrleise);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.prompt b { color: var(--auf); font-weight: 500; }
+
+.kopf h1 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: clamp(30px, 5.4vw, 46px);
+  line-height: 1.1;
+  letter-spacing: -.01em;
+  font-weight: 600;
+  color: var(--auf);
+  text-shadow: 0 0 24px hsl(150 90% 55% / .35);
+}
+
+/* The block cursor. Its animation is switched off for
+   `prefers-reduced-motion` at the end of this file. */
+.kursor {
+  display: inline-block;
+  width: .58em;
+  height: 1em;
+  margin-left: .12em;
+  vertical-align: -.12em;
+  background: var(--auf);
+  animation: blink 1.06s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.vorwort {
+  margin: 16px 0 0;
+  max-width: 52ch;
+  font-size: clamp(15px, 2.2vw, 18px);
+  color: var(--leise);
+}
+
+/* The way back. Mono, quiet, above the prompt — the one link every page of
+   this application owes the page that sent the reader here. */
+.reelpick-crumbs {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  letter-spacing: .04em;
+  color: var(--sehrleise);
+}
+.reelpick-crumbs a { color: var(--leise); text-decoration: none; }
+.reelpick-crumbs a:hover, .reelpick-crumbs a:focus-visible { color: var(--auf); text-decoration: underline; }
+
+/* --- Sections ---------------------------------------------------------- */
+
+main { padding: 44px 0 24px; }
+
+.abschnitt-kopf { margin-bottom: 20px; }
+.abschnitt-kopf + .reelpick-grid { margin-bottom: 40px; }
+.abschnitt-kopf + .abschnitt-kopf { margin-top: 36px; }
+.abschnitt-kopf h2 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  color: var(--auf);
+}
+.abschnitt-kopf p { margin: 6px 0 0; color: var(--leise); font-size: 15px; }
+
+/* --- The card ----------------------------------------------------------
+   THE SAME MARKUP THE FRONT PAGE GETS: `pages::card` renders it for the
+   fragment and for the history, so a pick looks the same in both places.
+   These rules mirror the ones the front page keeps for the embedded
+   fragment — whoever changes a class name changes it in `pages.rs` and in
+   both stylesheets. */
+
+.reelpick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.reelpick-field {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 20px 22px;
+  border: 1px solid var(--rand);
+  border-radius: 6px;
+  background: var(--schleier);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color .15s ease, transform .15s ease;
+}
+
+.reelpick-field:hover,
+.reelpick-field:focus-visible {
+  border-color: var(--auf);
+  transform: translateY(-2px);
+}
+.reelpick-field:focus-visible { outline: 2px solid var(--auf); outline-offset: 3px; }
+
+.reelpick-poster { width: 110px; flex: none; border-radius: 4px; }
+
+/* `min-width: 0` is the whole point: a flex child has `min-width: auto` and
+   therefore refuses to shrink below its longest unbreakable word. A film
+   title without spaces is not an invented case — on the front page it pushed
+   a horizontal scrollbar onto the whole document. */
+.reelpick-text { min-width: 0; flex: 1 1 auto; }
+
+.reelpick-title {
+  margin: 0 0 8px;
+  font-size: 20px;
+  color: var(--auf);
+  overflow-wrap: anywhere;
+}
+
+.reelpick-teaser {
+  margin: 0 0 8px;
+  color: var(--leise);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.reelpick-date,
+.reelpick-more,
+.reelpick-empty {
+  margin: 6px 0 0;
+  color: var(--leise);
+  font-size: 14px;
+}
+
+.reelpick-date { font-family: var(--mono); font-size: 12px; }
+
+.reelpick-more a { color: var(--auf); text-decoration: none; }
+.reelpick-more a:hover,
+.reelpick-more a:focus-visible { text-decoration: underline; }
+
+/* On a phone the poster goes above the text: next to 110px of poster there
+   were no 30 characters left per line at 320px. */
+@media (max-width: 480px) {
+  .reelpick-field { flex-direction: column; }
+  .reelpick-poster { width: 100%; max-width: 160px; }
+}
+
+/* --- The article ------------------------------------------------------- */
+
+.reelpick-head {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+
+.reelpick-head img {
+  width: 180px;
+  max-width: 40%;
+  height: auto;
+  flex: none;
+  border: 1px solid var(--rand);
+  border-radius: 4px;
+}
+
+.reelpick-head > div { min-width: 0; flex: 1 1 320px; }
+
+.reelpick-head h1 {
+  margin: 0 0 10px;
+  font-family: var(--mono);
+  font-size: clamp(22px, 3.4vw, 30px);
+  line-height: 1.15;
+  font-weight: 600;
+  color: var(--auf);
+  overflow-wrap: anywhere;
+}
+
+.reelpick-meta {
+  margin: 0 0 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--sehrleise);
+}
+
+.reelpick-button {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--auf);
+  border-radius: 3px;
+  color: var(--auf);
+  background: transparent;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.reelpick-button:hover, .reelpick-button:focus-visible {
+  color: var(--grund);
+  background: var(--auf);
+  box-shadow: 0 0 30px -10px var(--auf);
+}
+.reelpick-button:focus-visible { outline: 2px solid var(--auf); outline-offset: 3px; }
+
+/* Why this film, tonight — the model's own sentence, set apart as a quote. */
+.reelpick-reason {
+  margin: 0 0 32px;
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--auf);
+  color: var(--leise);
+  font-size: 16px;
+}
+
+.reelpick-article { max-width: 70ch; }
+.reelpick-article h1,
+.reelpick-article h2,
+.reelpick-article h3,
+.reelpick-article h4 {
+  margin: 28px 0 8px;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: var(--auf);
+}
+.reelpick-article p { margin: 0 0 14px; color: var(--text); }
+.reelpick-article a { color: var(--auf); }
+.reelpick-article blockquote {
+  margin: 0 0 14px;
+  padding-left: 16px;
+  border-left: 3px solid var(--rand);
+  color: var(--leise);
+}
+.reelpick-article code {
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--leise);
+}
+.reelpick-article img { max-width: 100%; height: auto; }
+.reelpick-article table { border-collapse: collapse; }
+.reelpick-article th, .reelpick-article td {
+  padding: 6px 12px 6px 0;
+  border-bottom: 1px solid var(--rand);
+  text-align: left;
+}
+
+.reelpick-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 48px;
+  padding-top: 20px;
+  border-top: 1px solid var(--rand);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.reelpick-nav a { color: var(--leise); text-decoration: none; }
+.reelpick-nav a:hover, .reelpick-nav a:focus-visible { color: var(--auf); text-decoration: underline; }
+
+/* --- Foot -------------------------------------------------------------- */
+
+footer {
+  margin-top: 60px;
+  padding: 26px 0 44px;
+  border-top: 1px solid var(--rand);
+  color: var(--sehrleise);
+  font-size: 13.5px;
+}
+footer p { margin: 0; }
+footer .prompt { margin: 0 0 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reelpick-field, .reelpick-button { transition: none; }
+  .reelpick-field:hover, .reelpick-field:focus-visible { transform: none; }
+  .kursor { animation: none; }
+  .kopf::after { display: none; }
+}

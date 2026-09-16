@@ -2,6 +2,7 @@
 
 pub mod markup;
 pub mod pages;
+pub mod strings;
 
 use std::sync::Arc;
 
