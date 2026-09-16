@@ -236,6 +236,7 @@ async fn every_pick_in_the_history_is_the_card_the_front_page_shows() {
     assert!(body.contains("<a class=\"reelpick-field\" href=\"/reelpick/2026-09-15\""));
     // The clothes of the front page: prompt line, cursor, section heading.
     assert!(body.contains("root@home.example") && body.contains("class=\"kursor\""));
+    assert!(body.contains("class=\"wortmarke\">REELPICK"));
     assert!(body.contains("[ ALL PICKS ]"));
 }
 
@@ -246,6 +247,52 @@ async fn an_empty_history_says_so_instead_of_showing_an_empty_grid() {
     assert_eq!(status, StatusCode::OK);
     assert!(body.contains("No pick yet."));
     assert!(!body.contains("reelpick-grid"));
+    // ONE sentence, not two: the count subline disappears at zero instead of
+    // saying "0 picks so far." above "No pick yet."
+    assert!(!body.contains("0 picks so far"), "{body}");
+    assert!(!body.contains("picks so far"), "{body}");
+
+    let (_d, de) = app_in("de", &[]).await;
+    let (_, _, body) = get(&de, "/reelpick/").await;
+    assert!(body.contains("Noch kein Tipp."));
+    assert!(!body.contains("Bisher 0 Tipps."), "{body}");
+    assert!(!body.contains("Bisher"), "{body}");
+}
+
+/// One `h1` per page, and it says what the page is about: the film on an
+/// article, the section heading on the history. The wordmark in the head is
+/// not a heading — it is on every page and would outrank both.
+#[tokio::test]
+async fn each_page_has_exactly_one_h1_and_it_names_the_page() {
+    let (_d, app) = app(&[
+        pick("2026-08-31", "August", false),
+        pick("2026-09-15", "Heat", true),
+    ])
+    .await;
+
+    let (_, _, article) = get(&app, "/reelpick/2026-09-15").await;
+    assert_eq!(article.matches("<h1").count(), 1, "{article}");
+    assert!(article.contains("<h1>Heat (1995)</h1>"), "{article}");
+    assert!(article.contains("class=\"wortmarke\">REELPICK"));
+
+    let (_, _, history) = get(&app, "/reelpick/").await;
+    assert_eq!(history.matches("<h1").count(), 1, "{history}");
+    assert!(
+        history.contains("<h1 class=\"abschnitt-titel\">[ ALL PICKS ]</h1>"),
+        "{history}"
+    );
+    // The month heads look the same and rank below it.
+    assert_eq!(history.matches("<h2").count(), 2, "{history}");
+    assert!(history.contains("<h2 class=\"abschnitt-titel\">[ SEPTEMBER 2026 ]</h2>"));
+
+    // The fragment brings no heading above `h3` into the page that embeds it.
+    let (_, _, fragment) = get(&app, "/reelpick/today.html").await;
+    assert!(!fragment.contains("<h1") && !fragment.contains("<h2"));
+
+    let (_d, de) = app_in("de", &[pick("2026-09-15", "Heat", false)]).await;
+    let (_, _, history) = get(&de, "/reelpick/").await;
+    assert_eq!(history.matches("<h1").count(), 1);
+    assert!(history.contains("ALLE TIPPS ]</h1>"), "{history}");
 }
 
 /// The pages are read by people who configured `language = "de"`; the words

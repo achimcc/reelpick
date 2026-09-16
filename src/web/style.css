@@ -78,7 +78,10 @@ body {
 }
 .prompt b { color: var(--auf); font-weight: 500; }
 
-.kopf h1 {
+/* THE WORDMARK IS NOT A HEADING, and the selector says so: on an article
+   the only `h1` is the film's title, on the history it is `[ ALL PICKS ]`.
+   `p` brings its own margin, hence the explicit zero. */
+.kopf .wortmarke {
   margin: 0;
   font-family: var(--mono);
   font-size: clamp(30px, 5.4vw, 46px);
@@ -128,7 +131,10 @@ main { padding: 44px 0 24px; }
 .abschnitt-kopf { margin-bottom: 20px; }
 .abschnitt-kopf + .reelpick-grid { margin-bottom: 40px; }
 .abschnitt-kopf + .abschnitt-kopf { margin-top: 36px; }
-.abschnitt-kopf h2 {
+/* BY CLASS AND NOT BY ELEMENT: the first of these headings is the `h1` of
+   the history, the month heads below it are `h2` — they look the same and
+   are ranked differently. */
+.abschnitt-titel {
   margin: 0;
   font-family: var(--mono);
   font-size: 13px;
@@ -145,9 +151,16 @@ main { padding: 44px 0 24px; }
    fragment — whoever changes a class name changes it in `pages.rs` and in
    both stylesheets. */
 
+/* `min(320px, 100%)` AND NOT A BARE `320px`: a grid track with a minimum
+   wider than the column it sits in does not shrink — it overflows, and it
+   takes the whole document with it. Measured on a phone-sized viewport:
+   at 320px the page reported scrollWidth 344 against clientWidth 305, and at
+   360px the card ate the 24px gutter on the right. `min()` lets the track
+   fall back to the full width it actually has, which is what every one of
+   these viewports needs. */
 .reelpick-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 16px;
 }
 

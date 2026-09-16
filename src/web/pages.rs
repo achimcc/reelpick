@@ -52,8 +52,14 @@ pub fn fragment(config: &Config, pick: Option<&Pick>) -> Markup {
     }
 }
 
-/// The page around a body: head with the prompt line, the name and the cursor,
-/// the crumbs back out of here, and a foot that says what happens tomorrow.
+/// The page around a body: head with the prompt line, the wordmark and the
+/// cursor, the crumbs back out of here, and a foot that says what happens
+/// tomorrow.
+///
+/// THE WORDMARK IS A `p`, NOT AN `h1`: the one heading of a page is what that
+/// page is about — the film on an article, `[ ALL PICKS ]` on the history —
+/// and a second `h1` with the application's name on every page pushes that
+/// one down a rank for anyone reading by headings.
 fn frame(
     config: &Config,
     title: &str,
@@ -77,7 +83,7 @@ fn frame(
                     div.bahn {
                         p.reelpick-crumbs { (crumbs) }
                         p.prompt { b { "root@" (host_of(&config.home_url)) } ":~# reelpick " (prompt_cmd) }
-                        h1 { "REELPICK" span.kursor aria-hidden="true" {} }
+                        p.wortmarke { "REELPICK" span.kursor aria-hidden="true" {} }
                         p.vorwort { (lead) }
                     }
                 }
@@ -194,14 +200,16 @@ pub fn history(config: &Config, picks: &[Pick]) -> Markup {
         crumb_home(config, &s),
         html! {
             div.abschnitt-kopf {
-                h2 { (s.all_picks_heading) }
-                p { (s.picks_so_far(picks.len())) }
+                h1.abschnitt-titel { (s.all_picks_heading) }
+                // The count is a subtitle, and a subtitle that says "none"
+                // above a sentence that says "none" is one sentence too many.
+                @if !picks.is_empty() { p { (s.picks_so_far(picks.len())) } }
             }
             @if picks.is_empty() {
                 p.reelpick-empty { (s.no_pick) }
             } @else {
                 @for (month, list) in &months {
-                    div.abschnitt-kopf { h2 { (s.month_heading(month)) } }
+                    div.abschnitt-kopf { h2.abschnitt-titel { (s.month_heading(month)) } }
                     div.reelpick-grid {
                         @for p in list { (card(config, p)) }
                     }
