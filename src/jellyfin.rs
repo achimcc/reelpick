@@ -13,6 +13,13 @@ pub struct Movie {
     pub director: Option<String>,
     pub overview: Option<String>,
     pub runtime_min: Option<i64>,
+    /// Jellyfin's own number for the film. Where the IMDb Ratings plugin is
+    /// installed — it is, on the server this was written for — this is IMDb's
+    /// rating, refreshed daily from IMDb's public dataset; a title with too
+    /// few votes there keeps whatever the metadata provider left behind.
+    /// Two things are read out of it, and they are different questions:
+    /// `Candidate::imdb_rating` (what IMDb says, for the reader) and the
+    /// stand-in for the TMDB rating when TMDB is silent (for the threshold).
     pub community_rating: Option<f64>,
 }
 

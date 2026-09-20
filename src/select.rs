@@ -15,6 +15,14 @@ pub struct Candidate {
     pub overview: String,
 }
 
+impl Candidate {
+    /// What IMDb says about the film, for the text and the page — not for
+    /// the threshold, which is TMDB's business (`rating`, `votes`).
+    pub fn imdb_rating(&self) -> Option<f64> {
+        self.movie.community_rating
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Thresholds {
     pub min_rating: f64,

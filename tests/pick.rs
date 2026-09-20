@@ -57,7 +57,10 @@ impl World {
 
 fn three_films() -> Vec<serde_json::Value> {
     vec![
-        common::movie_json("abc", "Heat", 949, 7.9),
+        // Jellyfin's CommunityRating is IMDb's number (the IMDb Ratings
+        // plugin writes it); TMDB's 7.9 below is a different number on
+        // purpose, so a test cannot pass by confusing the two.
+        common::movie_json("abc", "Heat", 949, 8.3),
         common::movie_json("def", "Dud", 2, 4.0),
         common::movie_json("ghi", "Obscure Gem", 3, 9.0),
     ]
@@ -77,6 +80,9 @@ async fn a_full_run_picks_writes_a_row_and_stores_the_poster() {
         (949, "Heat", "ollama")
     );
     assert_eq!(p.votes, Some(6500));
+    // Both ratings are kept, and they do not come from the same place:
+    // TMDB's decides the shortlist, IMDb's is what the reader is told.
+    assert_eq!((p.rating, p.imdb_rating), (Some(7.9), Some(8.3)));
     assert!(p.has_poster);
     assert!(w.config.data_dir.join("posters/2026-09-15.jpg").exists());
     assert_eq!(
@@ -95,6 +101,12 @@ async fn a_full_run_picks_writes_a_row_and_stores_the_poster() {
         body["format"]["properties"]["choice"]["enum"],
         serde_json::json!([949])
     );
+    // The model sees IMDb's rating and neither TMDB's rating nor its vote
+    // count — it is asked to quote a number, so it may only be shown one.
+    let asked = body["messages"][1]["content"].as_str().unwrap();
+    assert!(asked.contains("IMDb rating 8.3 out of 10"), "{asked}");
+    assert!(!asked.contains("6500"), "{asked}");
+    assert!(!asked.contains("7.9"), "{asked}");
 }
 
 #[tokio::test]

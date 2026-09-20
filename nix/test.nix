@@ -102,5 +102,12 @@ pkgs.testers.runNixOSTest {
         machine.succeed(f"journalctl -u reelpick-pick.service | grep -q '{date} already has its pick'")
         machine.succeed(f"curl -fsS http://127.0.0.1:8080/reelpick/{date} | grep -q 'jellyfin.example.org/web/index.html#/details?id=abc'")
         machine.succeed("test $(sqlite3 /var/lib/reelpick/reelpick.db 'select count(*) from picks') = 1")
+
+    with subtest("the article page names IMDb's rating, and the row keeps it"):
+        # Without TMDB the threshold falls back to Jellyfin's number, so both
+        # columns hold 7.9 here — but only the IMDb branch of the meta line
+        # writes the label, so this cannot pass through the old path.
+        machine.succeed(f"curl -fsS http://127.0.0.1:8080/reelpick/{date} | grep -q 'IMDb 7.9/10'")
+        machine.succeed("test $(sqlite3 /var/lib/reelpick/reelpick.db 'select imdb_rating from picks') = 7.9")
   '';
 }

@@ -4,7 +4,9 @@ reelpick picks one film a day from a Jellyfin library and writes something
 about it. TMDB supplies the rating and vote count that filter the
 candidates (cached, and entirely optional), and a local Ollama model picks
 the film from a random shortlist and writes a short teaser and a longer
-article about it. It serves the result as a handful of read-only pages: a
+article about it. The review names the film's IMDb rating — Jellyfin's own
+`CommunityRating`, which is IMDb's number wherever the IMDb Ratings plugin
+keeps it up to date — and that is the one rating the pages show. It serves the result as a handful of read-only pages: a
 fragment meant for embedding elsewhere, one article per day, and a history
 of every past pick.
 
@@ -26,7 +28,12 @@ day does nothing:
 6. Ask Ollama to pick one from the sample and write a `reason`, a `teaser`,
    and an `article`, constrained to a JSON schema so it cannot invent a
    film; one retry on a bad answer, then fall back to the best-rated
-   candidate with the TMDB overview standing in for the texts.
+   candidate with the TMDB overview standing in for the texts. The prompt
+   writes for an evening among grown-up friends, not for a family: a film is
+   never passed over for being unfit for children, and a hard one is not
+   preferred for being hard either. The only rating the model is shown is
+   IMDb's, which it is asked to name in the article — TMDB's numbers decide
+   the shortlist and are not the reader's business.
 7. Copy the poster into the local data directory (never served from a
    foreign host), and save everything in one transaction.
 
@@ -107,7 +114,7 @@ All routes live under `base_path`.
 | `GET <base>/` | the history: every past pick, newest first, grouped by month, each one as the same card the fragment shows |
 | `GET <base>/today.html` | the embeddable fragment: the latest pick, as a link with poster, title, year, teaser, and date (not necessarily *today's* pick — if `pick` failed, this shows yesterday's, dated) |
 | `GET <base>/today` | `302 Found` to the latest article |
-| `GET <base>/<date>` | the article for that date (`YYYY-MM-DD`): poster, title, year, director, genres, runtime, rating and vote count, the reason, the rendered article, a link into Jellyfin, and links to the previous and next day |
+| `GET <base>/<date>` | the article for that date (`YYYY-MM-DD`): poster, title, year, director, genres, runtime, IMDb rating, the reason, the rendered article, a link into Jellyfin, and links to the previous and next day |
 | `GET <base>/healthz` | `200` with the latest pick's date, or `503 no picks yet` |
 | `GET <base>/style.css` | the embedded stylesheet |
 | `GET <base>/poster/<date>.jpg` | the stored poster for that date, cached for a day |

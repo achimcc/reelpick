@@ -19,8 +19,13 @@ pub struct Pick {
     pub runtime_min: Option<i64>,
     pub genres: Vec<String>,
     pub director: Option<String>,
+    /// What TMDB says — the number the threshold in `select` is tuned to,
+    /// kept because it is the basis of the choice, not of the prose.
     pub rating: Option<f64>,
     pub votes: Option<i64>,
+    /// What IMDb says, as Jellyfin holds it. `None` for every pick from
+    /// before the column existed, and for a film IMDb has no rating for.
+    pub imdb_rating: Option<f64>,
     pub reason: String,
     pub teaser: String,
     pub article_md: String,
@@ -44,7 +49,7 @@ pub struct Store {
 }
 
 const PICK_COLUMNS: &str = "date, item_id, tmdb_id, title, year, runtime_min, genres, director, \
-    rating, votes, reason, teaser, article_md, generated_by, model, has_poster";
+    rating, votes, imdb_rating, reason, teaser, article_md, generated_by, model, has_poster";
 
 impl Store {
     pub async fn open(path: &Path) -> anyhow::Result<Store> {
@@ -68,7 +73,7 @@ impl Store {
         let genres = serde_json::to_string(&p.genres)?;
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "INSERT INTO picks ({PICK_COLUMNS}, created_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )))
         .bind(&p.date)
         .bind(&p.item_id)
@@ -80,6 +85,7 @@ impl Store {
         .bind(&p.director)
         .bind(p.rating)
         .bind(p.votes)
+        .bind(p.imdb_rating)
         .bind(&p.reason)
         .bind(&p.teaser)
         .bind(&p.article_md)
@@ -106,6 +112,7 @@ impl Store {
             director: row.try_get("director")?,
             rating: row.try_get("rating")?,
             votes: row.try_get("votes")?,
+            imdb_rating: row.try_get("imdb_rating")?,
             reason: row.try_get("reason")?,
             teaser: row.try_get("teaser")?,
             article_md: row.try_get("article_md")?,
@@ -246,6 +253,7 @@ mod tests {
             director: Some("Someone".into()),
             rating: Some(7.5),
             votes: Some(1000),
+            imdb_rating: Some(6.9),
             reason: "because".into(),
             teaser: "Two sentences.".into(),
             article_md: "# Hi\n\nText.".into(),
@@ -268,6 +276,8 @@ mod tests {
         let back = s.pick_for("2026-09-15").await.unwrap().unwrap();
         assert_eq!(back.title, "Film 1");
         assert_eq!(back.genres, vec!["Drama".to_string()]);
+        // The two ratings answer different questions and both survive the trip.
+        assert_eq!((back.rating, back.imdb_rating), (Some(7.5), Some(6.9)));
         assert!(s.insert_pick(&pick("2026-09-15", 2, "b")).await.is_err());
     }
 

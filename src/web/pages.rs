@@ -130,7 +130,14 @@ pub fn article(
     if let Some(minutes) = p.runtime_min {
         facts.push(format!("{} {}", s.integer(minutes), s.minutes));
     }
-    if let Some(rating) = p.rating {
+    // ONE rating on the page, and it is the one the review talks about.
+    // TMDB's number and vote count are what let the film into the shortlist
+    // at all; they are not what the reader is told. A pick from before the
+    // column existed has no IMDb rating stored, and for those the old line
+    // stays rather than the fact disappearing from the history.
+    if let Some(imdb) = p.imdb_rating {
+        facts.push(format!("IMDb {}/10", s.decimal(imdb)));
+    } else if let Some(rating) = p.rating {
         let mut line = format!("{}/10", s.decimal(rating));
         if let Some(votes) = p.votes {
             line.push_str(&format!(

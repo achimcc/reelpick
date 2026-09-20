@@ -70,12 +70,21 @@ and sampling, no I/O), `store` (SQLite), `web` (routes and templates), and
    no weighting by rating — the threshold has already done the sorting, and
    a 6.6 should have the same chance as an 8.4.
 8. **Ollama** receives the shortlist (title, year, genres, director,
-   runtime, overview, rating, vote count) and the configured language, and
+   runtime, overview, IMDb rating) and the configured language, and
    is asked to answer as JSON against a schema with exactly four fields:
    `choice` (a TMDB ID, constrained to the candidates — the model cannot
    invent a film), `reason` (one paragraph), `teaser` (two spoiler-free
    sentences, no rating number), and `article` (200 to 400 words of
-   Markdown, no heading larger than `###`, no fact beyond what was given).
+   Markdown, no heading larger than `###`, no fact beyond what was given,
+   and the IMDb rating named in the text).
+   **The audience is grown-up friends, not a family**: the prompt says in so
+   many words that no film is to be passed over because children should not
+   see it, and that a hard one is not thereby a better one.
+   **Only one rating reaches the model, and it is IMDb's** — Jellyfin's
+   `CommunityRating`, which the IMDb Ratings plugin refreshes from IMDb's
+   public dataset. TMDB's rating and vote count decide who is on the
+   shortlist at all (step 4) and stop there: a model asked to quote a number
+   must be shown exactly one, or it will sooner or later quote the other.
    The answer is checked against the schema, the candidate list, and length
    bounds (teaser 20–400 characters, article 100–700 words). A failure gets
    one retry, and then falls back.
@@ -115,7 +124,11 @@ markup in both places, under the `reelpick-*` class names the embedding page
 styles itself. And every word that is not the film's own comes from
 `web::strings::Strings`, chosen by `language`: German for `de`, English for
 everything else, including the month headings of the history and the
-separators in a rating and a vote count. No JavaScript anywhere, and no
+decimal separator in a rating (`IMDb 6,9/10` against `IMDb 6.9/10`). The
+article page shows the IMDb rating and nothing else of the kind, so the
+number on the page and the number in the review are the same one; a pick
+from before that column existed keeps the TMDB rating and vote count it was
+written with. No JavaScript anywhere, and no
 image from a host other than this one.
 
 The Jellyfin link on an article page points at

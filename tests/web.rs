@@ -19,6 +19,7 @@ fn pick(date: &str, title: &str, poster: bool) -> Pick {
         director: Some("Michael Mann".into()),
         rating: Some(7.9),
         votes: Some(6500),
+        imdb_rating: Some(8.3),
         reason: "Because tonight.".into(),
         teaser: "Two men. One city.".into(),
         article_md: "### Why\n\nA *great* film.\n\n<script>alert(1)</script>".into(),
@@ -172,9 +173,10 @@ async fn the_article_renders_markdown_safely_and_links_to_jellyfin_and_its_neigh
             && body.contains("href=\"/reelpick/2026-09-16\"")
     );
     assert!(body.contains("Directed by Michael Mann"));
-    // The vote count is grouped in the separator of the language: `6,500` in
-    // English, `6.500` in German — never the bare `6500` of a debug print.
-    assert!(body.contains("7.9/10 from 6,500 votes"), "{body}");
+    // The page shows IMDb's rating, the one the review talks about — TMDB's
+    // 7.9 and its vote count decided the shortlist and stay off the page.
+    assert!(body.contains("IMDb 8.3/10"), "{body}");
+    assert!(!body.contains("6,500"), "{body}");
     assert!(body.contains("170 min"));
     assert!(body.contains("Watch in Jellyfin"));
     assert!(body.contains("<title>Heat — reelpick</title>"));
@@ -310,8 +312,8 @@ async fn the_chrome_texts_follow_the_configured_language() {
     assert!(article.contains("In Jellyfin ansehen"));
     assert!(article.contains("Regie: Michael Mann"));
     assert!(article.contains("170 Min."));
-    // German writes 7,9 and groups thousands with a point.
-    assert!(article.contains("7,9/10 bei 6.500 Stimmen"), "{article}");
+    // German writes 8,3 with a comma.
+    assert!(article.contains("IMDb 8,3/10"), "{article}");
     assert!(article.contains("Tipp vom"));
     assert!(article.contains("← Startseite"));
     let (_, _, history) = get(&de, "/reelpick/").await;
@@ -326,7 +328,7 @@ async fn the_chrome_texts_follow_the_configured_language() {
     let (_, _, article) = get(&en, "/reelpick/2026-09-15").await;
     assert!(article.contains("<html lang=\"en\""));
     assert!(article.contains("Watch in Jellyfin"));
-    assert!(article.contains("7.9/10 from 6,500 votes"), "{article}");
+    assert!(article.contains("IMDb 8.3/10"), "{article}");
     let (_, _, history) = get(&en, "/reelpick/").await;
     assert!(history.contains("[ ALL PICKS ]") && history.contains("[ SEPTEMBER 2026 ]"));
     assert!(!history.contains("Alle Tipps"));

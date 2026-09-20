@@ -17,7 +17,9 @@ fn cand(id: i64) -> Candidate {
             director: Some("Someone".into()),
             overview: None,
             runtime_min: Some(120),
-            community_rating: None,
+            // IMDb's rating, as Jellyfin holds it — deliberately a different
+            // number from TMDB's below.
+            community_rating: Some(6.9),
         },
         rating: Some(7.5),
         votes: Some(1000),
@@ -42,6 +44,36 @@ fn the_prompt_names_every_candidate_the_language_and_the_rules() {
     assert!(p.contains("About film 2."));
     assert!(p.to_lowercase().contains("spoiler"));
     assert!(p.contains("de"));
+}
+
+#[test]
+fn the_prompt_shows_imdbs_rating_and_asks_for_it_in_the_article() {
+    let p = prompt(&[cand(1)], "de");
+    assert!(p.contains("IMDb rating 6.9 out of 10"), "{p}");
+    assert!(p.contains("Name the film's IMDb rating"), "{p}");
+    // TMDB decides who is on the shortlist and says nothing to the reader:
+    // a model shown two ratings will quote the wrong one sooner or later.
+    assert!(!p.contains("7.5"), "{p}");
+    assert!(!p.contains("1000"), "{p}");
+}
+
+#[test]
+fn a_candidate_without_an_imdb_rating_says_so_rather_than_inventing_one() {
+    let mut c = cand(1);
+    c.movie.community_rating = None;
+    let p = prompt(&[c], "de");
+    assert!(p.contains("IMDb rating unknown"), "{p}");
+}
+
+#[test]
+fn the_prompt_writes_for_friends_and_does_not_ask_for_a_family_film() {
+    let p = prompt(&[cand(1)], "de").to_lowercase();
+    assert!(p.contains("circle of friends"), "{p}");
+    assert!(p.contains("grown-up friends, not a family"), "{p}");
+    assert!(p.contains("never rule a film out because children"), "{p}");
+    // The old wording asked for an evening for "friends and family"; nothing
+    // in the prompt may ask for family suitability again.
+    assert!(!p.contains("friends and family"), "{p}");
 }
 
 #[test]

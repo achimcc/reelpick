@@ -105,6 +105,7 @@ pub async fn run<R: rand::Rng>(
         director: chosen.movie.director.clone(),
         rating: chosen.rating,
         votes: chosen.votes,
+        imdb_rating: chosen.imdb_rating(),
         reason: choice.reason,
         teaser: choice.teaser,
         article_md: choice.article,
