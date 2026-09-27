@@ -214,7 +214,12 @@ instead of through `httpInclude`, so a failure there never touches the page
 that embeds it.
 
 The fragment also escapes every `{` and `}` in its output (as `&#123;` /
-`&#125;`) before it is served. `httpInclude` parses the included body as a
+`&#125;`, in text and attributes) — `pages::fragment` does it itself, so no
+caller can serve it unescaped. Together with maud's escaping of `<` and `>`
+this also rules out `<!--{{` / `}}-->`, so the fragment stays inert if the
+embedding `templates` block uses those as its delimiters (recommended:
+`templates { between "<!--{{" "}}-->" }`, and the include written as
+`<!--{{httpInclude "/reelpick/today.html"}}-->`). `httpInclude` parses the included body as a
 Go template, and the fragment carries film text — including the fallback
 teaser, which is the TMDB overview verbatim and thus editable by anyone with
 a TMDB account — so without this, a teaser containing `{{.Req.Header}}`

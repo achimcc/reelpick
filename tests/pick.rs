@@ -189,3 +189,50 @@ async fn an_empty_library_is_an_error_that_says_so() {
         .to_string();
     assert!(err.contains("no eligible film"), "{err}");
 }
+
+/// AUDIT 3, B69 (B1-1): both teaser sources — the model's and the fallback's
+/// verbatim overview — and the title from Jellyfin end up in the fragment
+/// Caddy includes as a template. Whatever they carry, the fragment must not
+/// hand Caddy a delimiter.
+const PAYLOAD: &str = "{{env `B1_CANARY`}} {{printf `%c` 60}} }}--> <!--{{";
+
+fn assert_fragment_blind(w: &World, p: &reelpick::store::Pick) {
+    let html = reelpick::web::pages::fragment(&w.config, Some(p)).into_string();
+    for bad in ["{", "}", "<!--", "-->"] {
+        assert!(!html.contains(bad), "fragment contains {bad:?}: {html}");
+    }
+    assert!(html.contains("B1_CANARY"), "{html}");
+}
+
+#[tokio::test]
+async fn a_models_teaser_with_template_syntax_reaches_the_fragment_escaped() {
+    let mut film = common::movie_json("abc", "Heat", 949, 8.3);
+    film["Name"] = format!("Heat {PAYLOAD}").into();
+    let jelly = common::jellyfin("k3y", vec![film]).await;
+    let tmdb = common::tmdb("t0k", &[(949, 7.9, 6500)]).await;
+    let mut choice = common::good_choice(949);
+    choice["teaser"] = format!("Two men. One city. {PAYLOAD}").into();
+    let ollama = common::ollama(choice).await;
+    let w = world(&jelly, Some(&tmdb), &ollama).await;
+    let Outcome::Picked(p) = w.pick("2026-09-15").await else {
+        panic!("expected a pick")
+    };
+    assert_eq!(p.generated_by, "ollama");
+    assert!(p.teaser.contains(PAYLOAD) && p.title.contains(PAYLOAD));
+    assert_fragment_blind(&w, &p);
+}
+
+#[tokio::test]
+async fn a_fallback_teaser_from_an_overview_with_template_syntax_reaches_the_fragment_escaped() {
+    let mut film = common::movie_json("abc", "Heat", 949, 8.3);
+    film["Overview"] = format!("Two men {PAYLOAD}. One city.").into();
+    let jelly = common::jellyfin("k3y", vec![film]).await;
+    let ollama = wiremock::MockServer::start().await; // 404: fallback
+    let w = world(&jelly, None, &ollama).await;
+    let Outcome::Picked(p) = w.pick("2026-09-15").await else {
+        panic!("expected a pick")
+    };
+    assert_eq!(p.generated_by, "fallback");
+    assert!(p.teaser.contains("B1_CANARY"), "{}", p.teaser);
+    assert_fragment_blind(&w, &p);
+}

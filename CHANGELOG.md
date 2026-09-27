@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.1 — 2026-09-27
+
+The brace escaping of the fragment moves from the HTTP route into
+`pages::fragment` itself, the one function that writes that markup (audit 3,
+B69). Caddy's `httpInclude` parses the included body as a Go template, and
+title and teaser come from Jellyfin, TMDB's community-edited overview and a
+model's answer; the route already escaped every `{` and `}`, but a caller of
+the public function got raw braces. Now nothing that calls it can forget:
+no `{` or `}` leaves it (text and attributes, as `&#123;` / `&#125;`), and
+since maud escapes every `<` and `>` from the data, no `<!--{{` / `}}-->`
+either, for an operator who moves Caddy's delimiters there. New tests plant
+`{{env ...}}`, `{{printf ...}}`, `}}-->` and `<!--{{` in the title, the
+model's teaser and the fallback's overview and check the fragment.
+
 ## 0.2.0 — 2026-09-20
 
 The review names the film's IMDb rating, and the audience is friends rather

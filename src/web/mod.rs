@@ -67,15 +67,9 @@ fn is_date(s: &str) -> bool {
 async fn fragment(AxumState(s): AxumState<Shared>) -> Response {
     match s.store.latest_pick().await {
         Ok(p) => {
-            let markup = pages::fragment(&s.config, p.as_ref()).into_string();
-            // Operators embed this fragment with Caddy's `{{httpInclude}}`,
-            // which parses the included body as a Go template. Maud escapes
-            // `& < > "` but not braces, and the fallback teaser is the TMDB
-            // overview verbatim — editable by anyone with a TMDB account.
-            // Escaping every brace here means the browser still shows `{`,
-            // but Caddy's template parser never sees a `{{` delimiter to act on.
-            let escaped = markup.replace('{', "&#123;").replace('}', "&#125;");
-            Html(escaped).into_response()
+            // `pages::fragment` escapes every brace itself (Caddy's
+            // `{{httpInclude}}` parses this body as a Go template).
+            Html(pages::fragment(&s.config, p.as_ref()).into_string()).into_response()
         }
         Err(e) => failed(e),
     }

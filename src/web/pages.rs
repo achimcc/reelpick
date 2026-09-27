@@ -22,8 +22,9 @@ use crate::web::strings::{Strings, host_of};
 /// same rules in `style.css`, and neither can drift from the other as long as
 /// there is one place that writes the markup.
 ///
-/// Whatever this renders can end up inside a Caddy template (the fragment
-/// route escapes every brace afterwards), so nothing here may emit `{` or `}`.
+/// Whatever this renders can end up inside a Caddy template (`fragment`
+/// escapes every brace afterwards), so nothing here may emit `{` or `}` of
+/// its own: they would come out as `&#123;` / `&#125;`.
 pub fn card(config: &Config, p: &Pick) -> Markup {
     html! {
         a.reelpick-field href=(config.route(&format!("/{}", p.date))) {
@@ -39,9 +40,24 @@ pub fn card(config: &Config, p: &Pick) -> Markup {
     }
 }
 
+/// The front page's card, for an operator to embed with Caddy's
+/// `{{httpInclude}}`.
+///
+/// `httpInclude` PARSES THE INCLUDED BODY AS A GO TEMPLATE, with whatever
+/// delimiters the embedding `templates` block uses. Title and teaser come
+/// from outside — Jellyfin, TMDB's community-edited overview (verbatim in the
+/// fallback teaser), a model's answer — and maud escapes `& < > "` but not
+/// braces, so a `{{env `...`}}` in any of them would run in the operator's
+/// proxy (audit 3, B69). The escaping lives here, in the one function that
+/// writes the markup, and not in the route: then no caller can forget it.
+///
+/// What the output can no longer contain: no `{` or `}` at all (text and
+/// attributes alike, as `&#123;` / `&#125;`), hence no `{{`/`}}`; and since
+/// maud turns every `<` and `>` from the data into `&lt;` / `&gt;`, no
+/// `<!--{{` / `}}-->` either, for an operator who moved the delimiters there.
 pub fn fragment(config: &Config, pick: Option<&Pick>) -> Markup {
     let s = Strings::for_language(&config.language);
-    match pick {
+    let markup = match pick {
         None => html! {
             p.reelpick-empty { (s.no_pick) }
         },
@@ -49,7 +65,14 @@ pub fn fragment(config: &Config, pick: Option<&Pick>) -> Markup {
             (card(config, p))
             p.reelpick-more { a href=(config.route("/")) { (s.all_picks_so_far) } }
         },
-    }
+    };
+    PreEscaped(blind_to_templates(&markup.into_string()))
+}
+
+/// Every brace as a character reference: the browser still shows `{` and
+/// `}`, a template parser never sees one.
+fn blind_to_templates(html: &str) -> String {
+    html.replace('{', "&#123;").replace('}', "&#125;")
 }
 
 /// The page around a body: head with the prompt line, the wordmark and the

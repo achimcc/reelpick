@@ -391,3 +391,54 @@ async fn an_empty_base_path_serves_every_route_from_the_root() {
     );
     assert_eq!(get(&app, "/style.css").await.0, StatusCode::OK);
 }
+
+/// Go-template payloads an attacker can plant in a title or an overview
+/// (TMDB community edits, an NFO, a Jellyfin account with metadata rights),
+/// or talk a model into writing. Invented canary names, no real variables.
+const TEMPLATE_PAYLOADS: &str =
+    "{{env `B1_CANARY`}} {{printf `%c` 60}}img{{printf `%c` 62}} }}--> <!--{{ {{ .Req.Header }}";
+
+/// What must never reach an embedding Caddy: a `{{`/`}}` for the default
+/// delimiters, a lone brace to start one, or the `<!--{{` / `}}-->` pair an
+/// operator may configure with `templates { between ... }`.
+pub fn assert_blind_to_templates(html: &str) {
+    for bad in ["{{", "}}", "{", "}", "<!--", "-->"] {
+        assert!(!html.contains(bad), "fragment contains {bad:?}: {html}");
+    }
+}
+
+#[test]
+fn the_fragment_function_itself_escapes_braces_in_title_and_teaser() {
+    // AUDIT 3, B69 (B1-1): the brace escaping lived only in the HTTP route,
+    // so `pages::fragment` — the one function that writes this markup — was
+    // unsafe to call anywhere else. The invariant now belongs to it.
+    let config = Config::from_toml(
+        "base_path = \"/reelpick\"\n[jellyfin]\nurl = \"http://j\"\npublic_url = \"https://jellyfin.example\"\nlibrary = \"Filme\"\n[ollama]\nurl = \"http://o\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
+    let mut p = pick("2026-09-15", &format!("Film {TEMPLATE_PAYLOADS}"), true);
+    p.teaser = format!("Gut. {TEMPLATE_PAYLOADS} \"q\" <b>");
+    let html = reelpick::web::pages::fragment(&config, Some(&p)).into_string();
+    assert_blind_to_templates(&html);
+    // The reader still sees the text: braces as character references.
+    assert!(
+        html.contains("&#123;&#123;env `B1_CANARY`&#125;&#125;"),
+        "{html}"
+    );
+    assert!(
+        html.contains("&#125;&#125;--&gt; &lt;!--&#123;&#123;"),
+        "{html}"
+    );
+    assert!(html.contains("&lt;b&gt;"), "{html}");
+}
+
+#[tokio::test]
+async fn the_fragment_route_is_blind_to_every_delimiter_in_title_and_teaser() {
+    let mut p = pick("2026-09-15", &format!("Film {TEMPLATE_PAYLOADS}"), true);
+    p.teaser = format!("Gut. {TEMPLATE_PAYLOADS}");
+    let (_d, app) = app(&[p]).await;
+    let (status, _, body) = get(&app, "/reelpick/today.html").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_blind_to_templates(&body);
+    assert!(body.contains("B1_CANARY"));
+}
