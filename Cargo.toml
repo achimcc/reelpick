@@ -26,3 +26,7 @@ tower-http = { version = "0.6", features = ["set-header"] }
 tempfile = "3"
 tower = { version = "0.5", features = ["util"] }
 wiremock = "0.6"
+
+[lints.rust]
+# No `unsafe` anywhere in this crate, and no `#[allow]` can bring it back.
+unsafe_code = "forbid"
