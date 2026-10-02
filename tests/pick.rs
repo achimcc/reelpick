@@ -4,7 +4,7 @@ use rand::SeedableRng;
 use reelpick::config::Config;
 use reelpick::jellyfin::JellyfinClient;
 use reelpick::ollama::OllamaClient;
-use reelpick::pick::{Clients, Outcome, run};
+use reelpick::pick::{Clients, Outcome, run_with_pause};
 use reelpick::store::Store;
 use reelpick::tmdb::TmdbClient;
 
@@ -49,9 +49,16 @@ impl World {
             ollama: &self.ollama,
         };
         let mut rng = rand::rngs::StdRng::seed_from_u64(1);
-        run(&self.config, &self.store, clients, day, &mut rng)
-            .await
-            .unwrap()
+        run_with_pause(
+            &self.config,
+            &self.store,
+            clients,
+            day,
+            &mut rng,
+            std::time::Duration::ZERO,
+        )
+        .await
+        .unwrap()
     }
 }
 
@@ -183,7 +190,7 @@ async fn an_empty_library_is_an_error_that_says_so() {
         ollama: &w.ollama,
     };
     let mut rng = rand::rngs::StdRng::seed_from_u64(1);
-    let err = run(&w.config, &w.store, clients, "2026-09-15", &mut rng)
+    let err = reelpick::pick::run(&w.config, &w.store, clients, "2026-09-15", &mut rng)
         .await
         .unwrap_err()
         .to_string();
@@ -235,4 +242,89 @@ async fn a_fallback_teaser_from_an_overview_with_template_syntax_reaches_the_fra
     assert_eq!(p.generated_by, "fallback");
     assert!(p.teaser.contains("B1_CANARY"), "{}", p.teaser);
     assert_fragment_blind(&w, &p);
+}
+
+/// A Jellyfin whose image endpoint fails `times` times before the ordinary
+/// answer of `common::jellyfin` gets through.
+async fn jellyfin_with_a_failing_poster(times: u64) -> wiremock::MockServer {
+    use wiremock::matchers::{method, path};
+    let jelly = common::jellyfin("k3y", three_films()).await;
+    wiremock::Mock::given(method("GET"))
+        .and(path("/Items/abc/Images/Primary"))
+        .respond_with(wiremock::ResponseTemplate::new(503))
+        .up_to_n_times(times)
+        .with_priority(1)
+        .mount(&jelly)
+        .await;
+    jelly
+}
+
+#[tokio::test]
+async fn a_poster_that_fails_once_is_asked_for_again_in_the_same_run() {
+    let jelly = jellyfin_with_a_failing_poster(1).await;
+    let tmdb = common::tmdb("t0k", &[(949, 7.9, 6500)]).await;
+    let ollama = common::ollama(common::good_choice(949)).await;
+    let w = world(&jelly, Some(&tmdb), &ollama).await;
+    let Outcome::Picked(p) = w.pick("2026-09-15").await else {
+        panic!("expected a pick")
+    };
+    assert!(p.has_poster, "one failure must not cost the poster");
+    assert!(w.config.data_dir.join("posters/2026-09-15.jpg").exists());
+}
+
+#[tokio::test]
+async fn a_pick_without_a_poster_gets_it_on_a_later_run() {
+    // 2026-10-02: Jellyfin was busy, the image request timed out, and the
+    // pick of the day stayed without a cover — the poster was fetched once.
+    let jelly = jellyfin_with_a_failing_poster(u64::from(reelpick::pick::POSTER_ATTEMPTS)).await;
+    let tmdb = common::tmdb("t0k", &[(949, 7.9, 6500)]).await;
+    let ollama = common::ollama(common::good_choice(949)).await;
+    let w = world(&jelly, Some(&tmdb), &ollama).await;
+    let Outcome::Picked(p) = w.pick("2026-09-15").await else {
+        panic!("expected a pick")
+    };
+    assert!(
+        !p.has_poster,
+        "every attempt failed, the pick is stored bare"
+    );
+    assert!(!w.config.data_dir.join("posters/2026-09-15.jpg").exists());
+
+    // The second run of the day picks nothing — and fetches the poster.
+    assert!(matches!(
+        w.pick("2026-09-15").await,
+        Outcome::AlreadyPicked(_)
+    ));
+    let stored = w.store.pick_for("2026-09-15").await.unwrap().unwrap();
+    assert!(stored.has_poster, "the later run did not fetch the poster");
+    assert!(w.config.data_dir.join("posters/2026-09-15.jpg").exists());
+    assert_eq!(ollama.received_requests().await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_film_without_an_image_stays_without_and_fails_nothing() {
+    // `ghi` has no image in the mock (404): no retry storm, no error.
+    let jelly = common::jellyfin(
+        "k3y",
+        vec![common::movie_json("ghi", "Obscure Gem", 3, 9.0)],
+    )
+    .await;
+    let tmdb = common::tmdb("t0k", &[(3, 9.0, 12000)]).await;
+    let ollama = common::ollama(common::good_choice(3)).await;
+    let w = world(&jelly, Some(&tmdb), &ollama).await;
+    let Outcome::Picked(p) = w.pick("2026-09-15").await else {
+        panic!("expected a pick")
+    };
+    assert!(!p.has_poster);
+    assert!(matches!(
+        w.pick("2026-09-15").await,
+        Outcome::AlreadyPicked(_)
+    ));
+    assert!(
+        !w.store
+            .pick_for("2026-09-15")
+            .await
+            .unwrap()
+            .unwrap()
+            .has_poster
+    );
 }

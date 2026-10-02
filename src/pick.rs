@@ -11,6 +11,19 @@ use crate::tmdb::{TmdbClient, enrich};
 
 pub const EXHAUSTION_WINDOW: i64 = 20;
 
+/// How often the poster of a new pick is asked for before the run stores the
+/// pick without one, and how long it waits in between. A Jellyfin that is busy
+/// with a library scan answers the image request late or not at all; the pick
+/// itself has been made by then and must not be lost over a picture.
+pub const POSTER_ATTEMPTS: u32 = 3;
+pub const POSTER_PAUSE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How many of the newest picks without a poster every run tries again. A
+/// pick that got none on its day (2026-10-02: the image request timed out
+/// while Jellyfin removed fifteen thousand items) used to stay without one
+/// for good, because the poster was fetched exactly once.
+pub const BACKFILL_WINDOW: i64 = 7;
+
 pub struct Clients<'a> {
     pub jellyfin: &'a JellyfinClient,
     pub tmdb: Option<&'a TmdbClient>,
@@ -27,6 +40,78 @@ pub enum Outcome {
     Picked(Pick),
 }
 
+/// Fetch the poster of `item_id` and write it as the poster of `date`.
+/// `false` when Jellyfin has none or did not deliver one in `attempts` tries.
+async fn store_poster(
+    config: &Config,
+    jellyfin: &JellyfinClient,
+    item_id: &str,
+    date: &str,
+    attempts: u32,
+    pause: std::time::Duration,
+) -> anyhow::Result<bool> {
+    for attempt in 1..=attempts {
+        match jellyfin.poster(item_id).await {
+            Ok(Some(bytes)) => {
+                let dir = config.data_dir.join("posters");
+                tokio::fs::create_dir_all(&dir).await?;
+                tokio::fs::write(dir.join(format!("{date}.jpg")), bytes).await?;
+                return Ok(true);
+            }
+            Ok(None) => return Ok(false),
+            Err(e) => {
+                eprintln!(
+                    "reelpick: no poster for {date} (attempt {attempt} of {attempts}): {e:#}"
+                );
+                if attempt < attempts {
+                    tokio::time::sleep(pause).await;
+                }
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// Try once more for every recent pick that has no poster. Returns the dates
+/// that have one now. Nothing here fails the run: a poster is decoration.
+pub async fn backfill_posters(
+    config: &Config,
+    store: &Store,
+    jellyfin: &JellyfinClient,
+) -> Vec<String> {
+    let missing = match store.picks_without_poster(BACKFILL_WINDOW).await {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("reelpick: cannot list the picks without a poster: {e:#}");
+            return Vec::new();
+        }
+    };
+    let mut filled = Vec::new();
+    for p in missing {
+        let stored = store_poster(
+            config,
+            jellyfin,
+            &p.item_id,
+            &p.date,
+            1,
+            std::time::Duration::ZERO,
+        )
+        .await;
+        match stored {
+            Ok(true) => match store.set_has_poster(&p.date).await {
+                Ok(()) => {
+                    eprintln!("reelpick: {} has its poster now", p.date);
+                    filled.push(p.date);
+                }
+                Err(e) => eprintln!("reelpick: {e:#}"),
+            },
+            Ok(false) => {}
+            Err(e) => eprintln!("reelpick: writing the poster for {}: {e:#}", p.date),
+        }
+    }
+    filled
+}
+
 pub async fn run<R: rand::Rng>(
     config: &Config,
     store: &Store,
@@ -34,6 +119,22 @@ pub async fn run<R: rand::Rng>(
     today: &str,
     rng: &mut R,
 ) -> anyhow::Result<Outcome> {
+    run_with_pause(config, store, clients, today, rng, POSTER_PAUSE).await
+}
+
+/// `run`, with the pause between two poster attempts given — the tests do
+/// not wait thirty seconds.
+pub async fn run_with_pause<R: rand::Rng>(
+    config: &Config,
+    store: &Store,
+    clients: Clients<'_>,
+    today: &str,
+    rng: &mut R,
+    poster_pause: std::time::Duration,
+) -> anyhow::Result<Outcome> {
+    // Before anything else, and on every run: also on the second run of a day,
+    // which otherwise does nothing.
+    backfill_posters(config, store, clients.jellyfin).await;
     if store.pick_for(today).await?.is_some() {
         return Ok(Outcome::AlreadyPicked(today.to_string()));
     }
@@ -80,19 +181,15 @@ pub async fn run<R: rand::Rng>(
         .find(|c| c.movie.tmdb_id == Some(choice.tmdb_id))
         .context("the choice is not in the shortlist")?;
 
-    let has_poster = match clients.jellyfin.poster(&chosen.movie.item_id).await {
-        Ok(Some(bytes)) => {
-            let dir = config.data_dir.join("posters");
-            tokio::fs::create_dir_all(&dir).await?;
-            tokio::fs::write(dir.join(format!("{today}.jpg")), bytes).await?;
-            true
-        }
-        Ok(None) => false,
-        Err(e) => {
-            eprintln!("reelpick: no poster: {e:#}");
-            false
-        }
-    };
+    let has_poster = store_poster(
+        config,
+        clients.jellyfin,
+        &chosen.movie.item_id,
+        today,
+        POSTER_ATTEMPTS,
+        poster_pause,
+    )
+    .await?;
 
     let pick = Pick {
         date: today.to_string(),

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2 — 2026-10-02
+
+A pick no longer stays without its poster because Jellyfin was busy for a
+minute. The poster used to be fetched exactly once, when the pick was made;
+on 2026-10-02 that request timed out while Jellyfin removed fifteen thousand
+items, and the pick of the day was shown without a cover for good. Now the
+run asks up to three times, thirty seconds apart, and every run — also the
+second one of a day, which otherwise does nothing — tries once more for the
+seven newest picks that have none. A film Jellyfin has no image for (404)
+stays without, quietly. None of this can fail a run.
+
 ## 0.2.1 — 2026-09-27
 
 The brace escaping of the fragment moves from the HTTP route into

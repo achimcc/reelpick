@@ -147,6 +147,24 @@ impl Store {
         self.picks_where("ORDER BY date DESC", None).await
     }
 
+    /// The newest `n` picks that were stored without a poster.
+    pub async fn picks_without_poster(&self, n: i64) -> anyhow::Result<Vec<Pick>> {
+        self.picks_where(
+            &format!("WHERE has_poster = 0 ORDER BY date DESC LIMIT {n}"),
+            None,
+        )
+        .await
+    }
+
+    pub async fn set_has_poster(&self, date: &str) -> anyhow::Result<()> {
+        sqlx::query("UPDATE picks SET has_poster = 1 WHERE date = ?")
+            .bind(date)
+            .execute(&self.pool)
+            .await
+            .context("marking the pick as having a poster")?;
+        Ok(())
+    }
+
     pub async fn oldest_picks(&self, n: i64) -> anyhow::Result<Vec<Pick>> {
         self.picks_where(&format!("ORDER BY date ASC LIMIT {n}"), None)
             .await
