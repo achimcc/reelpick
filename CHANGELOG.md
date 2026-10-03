@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 — 2026-10-03
+
+Baseline hardening from the homeserver's security audit 3 (B149), no change in behaviour: `unsafe` code denied crate-wide, flake checks `audit` (cargo-audit against a pinned advisory database) and `deny` (cargo-deny: bans, sources, licenses), `SECURITY.md`, Renovate.
+
 ## 0.2.2 — 2026-10-02
 
 A pick no longer stays without its poster because Jellyfin was busy for a
