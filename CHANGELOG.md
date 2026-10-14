@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.4 — 2026-10-14
+
+Dependency updates only, no change in behaviour: rustls 0.23.46
+(RUSTSEC-2026-0346 to 0349), quinn-proto 0.11.19 (RUSTSEC-2026-0338 to
+0343; compiled in through reqwest, never used) and ammonia 4.2.3
+(RUSTSEC-2021-0157 and 0158; `style` attributes and SVG animation tags,
+which the default allowlist never lets through). Found by the homeserver's
+daily `cargo audit bin` over the deployed binaries; the pinned advisory
+database moves to 2026-10-14.
+
 ## 0.2.3 — 2026-10-03
 
 Baseline hardening from the homeserver's security audit 3 (B149), no change in behaviour: `unsafe` code denied crate-wide, flake checks `audit` (cargo-audit against a pinned advisory database) and `deny` (cargo-deny: bans, sources, licenses), `SECURITY.md`, Renovate.
