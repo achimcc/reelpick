@@ -12,9 +12,33 @@ async fn resolves_the_library_reads_the_films_and_fetches_a_poster() {
     assert_eq!(films.len(), 1);
     let heat = &films[0];
     assert_eq!(heat.tmdb_id, Some(949));
-    assert_eq!(heat.director.as_deref(), Some("Michael Mann"));
     assert_eq!(heat.runtime_min, Some(170));
     assert_eq!(heat.genres, ["Crime", "Drama"]);
+    // The listing does not ask for `People` — the one field that made the
+    // request take a minute on a busy Jellyfin (0.2.5). The director comes
+    // in a second request, for the shortlist only.
+    assert_eq!(heat.director, None);
+    let listing = server
+        .received_requests()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|r| r.url.path() == "/Items")
+        .expect("the listing request");
+    let fields = listing
+        .url
+        .query_pairs()
+        .find(|(k, _)| k == "Fields")
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default();
+    assert!(!fields.contains("People"), "{fields}");
+    let directors = client.directors(&["abc", "zzz"]).await.unwrap();
+    assert_eq!(
+        directors.get("abc").map(String::as_str),
+        Some("Michael Mann")
+    );
+    assert_eq!(directors.len(), 1);
+    assert!(client.directors(&[]).await.unwrap().is_empty());
     let poster = client.poster("abc").await.unwrap().unwrap();
     assert!(poster.starts_with(&[0xFF, 0xD8]));
     assert!(client.poster("zzz").await.unwrap().is_none());

@@ -72,6 +72,7 @@ from environment variables.
 | `[jellyfin] public_url` | *(required)* | Jellyfin base URL used for the browser-facing "view in Jellyfin" link |
 | `[jellyfin] library` | *(required)* | the library's name, as shown in Jellyfin |
 | `[jellyfin] api_key_file` | `None` | path to a file holding the Jellyfin API key; required in practice, since `pick` cannot read the library without it |
+| `[jellyfin] timeout_secs` | `60` | how long one request to Jellyfin may take; Jellyfin answers in milliseconds when idle and in tens of seconds while a library scan or trickplay run holds its database |
 | `[tmdb] api_key_file` | `None` | path to a file holding the TMDB v3 API key; without it, ratings fall back to Jellyfin's own |
 | `[tmdb] min_rating` | `6.5` | minimum rating a candidate must clear |
 | `[tmdb] min_votes` | `200` | minimum vote count required (TMDB only; ignored on the Jellyfin fallback) |
@@ -130,7 +131,7 @@ All routes live under `base_path`.
 | `settings` | `{ }` | the configuration above, as a Nix attribute set (freeform TOML); `data_dir` and both `api_key_file` entries are set by the module itself |
 | `jellyfinApiKeyFile` | *(required)* | where the Jellyfin API key comes from — an absolute path, or a bare systemd credential name |
 | `tmdbApiKeyFile` | `null` | same, for the TMDB key; without it, ratings come from Jellyfin |
-| `pickTime` | `"05:00"` | when the daily pick runs, as a systemd `OnCalendar` hour:minute, in the configured `settings.timezone` (UTC when unset) |
+| `pickTime` | `"05:00"` | when the daily pick runs, as a systemd `OnCalendar` hour:minute in the configured `settings.timezone` (UTC when unset) — or a list of them: the pick is idempotent per day, so a second slot later in the morning only does something when the first one failed, or when the machine was restarted between a failed attempt and its retry |
 
 Example, adapted from the module's own VM test (`nix/test.nix`):
 

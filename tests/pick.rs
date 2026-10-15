@@ -87,6 +87,9 @@ async fn a_full_run_picks_writes_a_row_and_stores_the_poster() {
         (949, "Heat", "ollama")
     );
     assert_eq!(p.votes, Some(6500));
+    // The director is fetched for the shortlist after the sample, not with
+    // the library listing — and it still ends up on the pick.
+    assert_eq!(p.director.as_deref(), Some("Michael Mann"));
     // Both ratings are kept, and they do not come from the same place:
     // TMDB's decides the shortlist, IMDb's is what the reader is told.
     assert_eq!((p.rating, p.imdb_rating), (Some(7.9), Some(8.3)));

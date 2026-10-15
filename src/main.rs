@@ -61,7 +61,11 @@ async fn pick(config: Config) -> anyhow::Result<()> {
         .api_key_file
         .as_ref()
         .context("jellyfin.api_key_file is not set; pick cannot read the library without it")?;
-    let jellyfin = JellyfinClient::new(&config.jellyfin.url, &read_secret(key_file)?)?;
+    let jellyfin = JellyfinClient::with_timeout(
+        &config.jellyfin.url,
+        &read_secret(key_file)?,
+        std::time::Duration::from_secs(config.jellyfin.timeout_secs),
+    )?;
     let tmdb = match &config.tmdb.api_key_file {
         Some(f) => Some(TmdbClient::new(&read_secret(f)?, &config.language)?),
         None => {

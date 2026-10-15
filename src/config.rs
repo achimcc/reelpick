@@ -26,6 +26,12 @@ pub struct Jellyfin {
     pub public_url: String,
     pub library: String,
     pub api_key_file: Option<PathBuf>,
+    /// How long one request to Jellyfin may take. Jellyfin answers in
+    /// milliseconds when idle and in tens of seconds while a library scan
+    /// or trickplay run holds its database; a run that lands in such an
+    /// hour needs more than the default minute, not another time slot.
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,6 +88,9 @@ fn default_home_url() -> String {
 }
 fn default_sample_size() -> usize {
     5
+}
+fn default_timeout_secs() -> u64 {
+    crate::jellyfin::DEFAULT_TIMEOUT_SECS
 }
 fn default_min_rating() -> f64 {
     6.5

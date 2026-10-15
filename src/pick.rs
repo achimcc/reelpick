@@ -167,7 +167,19 @@ pub async fn run_with_pause<R: rand::Rng>(
         bail!("no eligible film: the library is empty or nothing clears the threshold");
     }
 
-    let shortlist = sample(rng, pool, config.sample_size);
+    let mut shortlist = sample(rng, pool, config.sample_size);
+    // The director, for the shortlist only (see `JellyfinClient::movies`).
+    // A film without one is still a film: Jellyfin being slow here costs the
+    // name on the page, not the pick.
+    let ids: Vec<&str> = shortlist.iter().map(|c| c.movie.item_id.as_str()).collect();
+    match clients.jellyfin.directors(&ids).await {
+        Ok(mut directors) => {
+            for c in &mut shortlist {
+                c.movie.director = directors.remove(&c.movie.item_id);
+            }
+        }
+        Err(e) => eprintln!("reelpick: {e:#}; the pick goes on without a director"),
+    }
     let (choice, generated_by, model) =
         match clients.ollama.choose(&shortlist, &config.language).await {
             Ok(c) => (c, "ollama", Some(clients.ollama.model().to_string())),

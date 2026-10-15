@@ -85,13 +85,21 @@ in
     };
 
     pickTime = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.coercedTo lib.types.str lib.singleton (lib.types.listOf lib.types.str);
       default = "05:00";
+      example = [ "02:30" "06:30" ];
       description = ''
         When the daily pick runs (systemd OnCalendar hour:minute), in the
         configured `settings.timezone` — UTC when that is unset. This is the
         same zone that decides what "today" means for the pick itself, not
         necessarily the machine's local time.
+
+        A list gives the timer several slots a day. The pick is idempotent
+        per day, so a later slot does nothing on a day that has its pick —
+        and saves the day when the first slot failed, or when a restart of
+        the machine cut the chain of retries between a failed attempt and
+        the next one (`Persistent` only catches up on a trigger that was
+        missed altogether, not on a run that was stopped).
       '';
     };
   };
@@ -139,7 +147,7 @@ in
         # systemd OnCalendar accepts a trailing IANA zone; without one it
         # would fire in the machine's zone, not the zone "today" is computed
         # in for the pick itself.
-        OnCalendar = "*-*-* ${cfg.pickTime}:00 ${cfg.settings.timezone or "UTC"}";
+        OnCalendar = map (t: "*-*-* ${t}:00 ${cfg.settings.timezone or "UTC"}") cfg.pickTime;
         Persistent = true;
         Unit = "reelpick-pick.service";
       };

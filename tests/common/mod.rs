@@ -25,10 +25,30 @@ pub async fn jellyfin(api_key: &str, movies: Vec<serde_json::Value>) -> MockServ
         })))
         .mount(&server).await;
     let count = movies.len();
+    // The library listing, as Jellyfin answers it when `People` is not among
+    // the requested fields: no `People` on any item. The directors come from
+    // the second request below, by `Ids`, and only there.
+    let without_people: Vec<serde_json::Value> = movies
+        .iter()
+        .map(|m| {
+            let mut m = m.clone();
+            m.as_object_mut().unwrap().remove("People");
+            m
+        })
+        .collect();
     Mock::given(method("GET"))
         .and(path("/Items"))
         .and(query_param("ParentId", LIBRARY_ID))
         .and(query_param("IncludeItemTypes", "Movie"))
+        .and(header("Authorization", auth.as_str()))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "Items": without_people, "TotalRecordCount": count
+        })))
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/Items"))
+        .and(query_param("Fields", "People"))
         .and(header("Authorization", auth.as_str()))
         .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
             "Items": movies, "TotalRecordCount": count

@@ -75,14 +75,28 @@ struct Person {
 
 const TICKS_PER_MINUTE: i64 = 600_000_000;
 
+/// How long one request may take unless the configuration says otherwise.
+pub const DEFAULT_TIMEOUT_SECS: u64 = 60;
+
 impl JellyfinClient {
     pub fn new(base_url: &str, api_key: &str) -> anyhow::Result<JellyfinClient> {
+        JellyfinClient::with_timeout(
+            base_url,
+            api_key,
+            std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS),
+        )
+    }
+
+    /// `new`, with the per-request timeout given (`[jellyfin] timeout_secs`).
+    pub fn with_timeout(
+        base_url: &str,
+        api_key: &str,
+        timeout: std::time::Duration,
+    ) -> anyhow::Result<JellyfinClient> {
         Ok(JellyfinClient {
             base: base_url.trim_end_matches('/').to_string(),
             auth: format!("MediaBrowser Token=\"{api_key}\""),
-            http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()?,
+            http: reqwest::Client::builder().timeout(timeout).build()?,
         })
     }
 
@@ -118,6 +132,13 @@ impl JellyfinClient {
             .with_context(|| format!("Jellyfin has no library named {name:?}"))
     }
 
+    /// Every film in the library, WITHOUT its people: `director` is `None`
+    /// here and filled in by `directors` for the shortlist only. `People` is
+    /// the one expensive field — on a library of a few thousand films the
+    /// same request took 0.07 s without it and 19 s with it on a quiet
+    /// server, and ran past a minute whenever Jellyfin was busy with a
+    /// nightly task (measured 2026-10-02 and 2026-10-15). Asking for it on
+    /// every film, to print one director, cost the pick of the day.
     pub async fn movies(&self, library_id: &str) -> anyhow::Result<Vec<Movie>> {
         let page: Page<Item> = self
             .get_json(
@@ -126,11 +147,37 @@ impl JellyfinClient {
                     ("ParentId", library_id),
                     ("IncludeItemTypes", "Movie"),
                     ("Recursive", "true"),
-                    ("Fields", "ProviderIds,Overview,Genres,People,CommunityRating,ProductionYear,RunTimeTicks"),
+                    (
+                        "Fields",
+                        "ProviderIds,Overview,Genres,CommunityRating,ProductionYear,RunTimeTicks",
+                    ),
                 ],
             )
             .await?;
         Ok(page.items.into_iter().map(Movie::from).collect())
+    }
+
+    /// The director of each of the given items, by item id — one request
+    /// for the whole shortlist. An item without a director is simply absent.
+    pub async fn directors(
+        &self,
+        item_ids: &[&str],
+    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        if item_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let ids = item_ids.join(",");
+        let page: Page<Item> = self
+            .get_json("/Items", &[("Ids", ids.as_str()), ("Fields", "People")])
+            .await?;
+        Ok(page
+            .items
+            .into_iter()
+            .filter_map(|i| {
+                let m = Movie::from(i);
+                m.director.map(|d| (m.item_id, d))
+            })
+            .collect())
     }
 
     /// `None` when Jellyfin has no image for the item — a film without a

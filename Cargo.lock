@@ -1870,7 +1870,7 @@ dependencies = [
 
 [[package]]
 name = "reelpick"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "ammonia",
  "anyhow",

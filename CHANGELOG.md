@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.5 — 2026-10-15
+
+The pick no longer depends on Jellyfin being idle. `GET /Items` over the
+whole library asked for `People` on every film, to print one director; that
+single field turned a 0.07 s request into 19 s on a quiet server and into
+a timeout whenever a library scan, trickplay or tag-cache run held
+Jellyfin's database — which on the server this was written for happened at
+every one of the run's three attempts for five nights in a row. The library
+is now read without `People`, and the directors of the five shortlisted
+films come in one small request afterwards; when even that fails, the pick
+goes on without the name. `[jellyfin] timeout_secs` (default `60`) makes the
+request timeout a setting instead of a constant.
+
+The NixOS module's `pickTime` also takes a list. The pick is idempotent per
+day, so a second slot later in the morning only does something when the
+first failed — or when a restart of the machine stopped the chain of
+retries, which `Persistent` does not catch up on (2026-10-15: three
+attempts into Jellyfin's busy hours, then a deploy at 04:32 restarted the
+container, and the day had no pick).
+
 ## 0.2.4 — 2026-10-14
 
 Dependency updates only, no change in behaviour: rustls 0.23.46
